@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+/**
+ * @title MedChain Medical Record Ledger
+ * @dev Smart Contract ini berfungsi untuk menyimpan "Bukti" (Hash) dari rekam medis.
+ * 
+ * CARA PENGGUNAAN:
+ * 1. Ubah nama file ini dari .txt menjadi .sol
+ * 2. Gunakan Remix IDE (remix.ethereum.org) untuk compile dan deploy.
+ * 3. Deploy ke jaringan testnet (Sepolia/Polygon Mumbai) atau mainnet.
+ */
+
+contract MedChain {
+    
+    // Struktur data yang disimpan di Blockchain
+    // Kita TIDAK menyimpan data medis mentah (privasi), hanya Hash-nya saja.
+    struct Record {
+        uint256 id;
+        uint256 timestamp;
+        string patientId;     // ID Pasien (Contoh: RM-001)
+        string department;    // Poli (Contoh: Poli Umum)
+        string dataHash;      // SHA-256 Hash dari seluruh data medis (Bukti Integritas)
+        address doctor;       // Wallet Address dokter yang menginput
+    }
+
+    // Penyimpanan data (State Variables)
+    mapping(uint256 => Record) public records;
+    uint256 public recordCount;
+    
+    // Sistem Keamanan (Access Control)
+    address public admin;
+    mapping(address => bool) public authorizedDoctors;
+
+    // Events (Untuk log yang bisa dibaca aplikasi frontend)
+    event RecordAdded(uint256 indexed id, string patientId, address indexed doctor, uint256 timestamp);
+    event DoctorAuthorized(address indexed doctor);
+
+    // Modifier: Hanya Admin yang bisa akses
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Akses Ditolak: Hanya Admin");
+        _;
+    }
+
+    // Modifier: Hanya Dokter terdaftar yang bisa input data
+    modifier onlyDoctor() {
+        require(authorizedDoctors[msg.sender] || msg.sender == admin, "Akses Ditolak: Anda bukan dokter terdaftar");
+        _;
+    }
+
+    // Constructor: Dijalankan sekali saat contract di-deploy
+    constructor() {
+        admin = msg.sender;
+        authorizedDoctors[msg.sender] = true; // Admin otomatis jadi dokter pertama
+    }
+
+    // Fungsi 1: Mendaftarkan Dokter Baru (Hanya Admin)
+    function authorizeDoctor(address _doctorAddress) public onlyAdmin {
+        authorizedDoctors[_doctorAddress] = true;
+        emit DoctorAuthorized(_doctorAddress);
+    }
+
+    // Fungsi 2: Menambah Rekam Medis Baru (Hanya Dokter)
+    function addRecord(
+        string memory _patientId, 
+        string memory _department, 
+        string memory _dataHash
+    ) public onlyDoctor {
+        recordCount++;
+        
+        records[recordCount] = Record(
+            recordCount,
+            block.timestamp,
+            _patientId,
+            _department,
+            _dataHash,
+            msg.sender
+        );
+        
+        emit RecordAdded(recordCount, _patientId, msg.sender, block.timestamp);
+    }
+
+    // Fungsi 3: Membaca data rekam medis berdasarkan ID Blok
+    function getRecord(uint256 _id) public view returns (
+        uint256 id,
+        uint256 timestamp,
+        string memory patientId,
+        string memory department,
+        string memory dataHash,
+        address doctor
+    ) {
+        Record memory r = records[_id];
+        return (r.id, r.timestamp, r.patientId, r.department, r.dataHash, r.doctor);
+    }
+
+    // Fungsi 4: Verifikasi Integritas Data
+    // Frontend akan mengirim hash data lokal, contract mencocokkan dengan hash di blockchain
+    function verifyIntegrity(uint256 _id, string memory _comparisonHash) public view returns (bool) {
+        // String comparison di Solidity harus menggunakan keccak256
+        return keccak256(abi.encodePacked(records[_id].dataHash)) == keccak256(abi.encodePacked(_comparisonHash));
+    }
+}

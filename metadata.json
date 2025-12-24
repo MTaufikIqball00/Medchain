@@ -1,0 +1,5 @@
+{
+  "name": "MedChain: AI & Blockchain Medical Records",
+  "description": "A prototype Medical Record application simulating Blockchain immutability. Includes Solidity Smart Contract source code in /contracts/MedChain.sol for real-world deployment reference.",
+  "requestFramePermissions": []
+}
