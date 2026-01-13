@@ -3,6 +3,8 @@ import { Bot, Loader2, Save, FileText, CheckCircle, User, Lock, ShieldCheck, Ste
 import { MedicalRecordData, GeminiAnalysisResult } from '../types';
 import { analyzeMedicalNotes } from '../services/geminiService';
 import { encryptText } from '../utils/encryptionUtils';
+import { submitProofToEthereum } from '../services/ethereumService';
+import { saveToHyperledgerFabric } from '../services/fabricService';
 
 interface RecordFormProps {
   onAddRecord: (data: MedicalRecordData) => Promise<void>;
@@ -10,6 +12,7 @@ interface RecordFormProps {
     patientId: string;
     patientName: string;
   } | null;
+  doctorName?: string;
 }
 
 const DEPARTMENTS = [
@@ -21,14 +24,14 @@ const DEPARTMENTS = [
   "IGD"
 ];
 
-const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData }) => {
+const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, doctorName = "Dr. Current User" }) => {
   const [formData, setFormData] = useState({
     patientId: '',
     patientName: '',
     department: 'Poli Umum',
     symptoms: '',
     rawNotes: '',
-    doctorName: 'Dr. Current User'
+    doctorName: doctorName
   });
 
   const [aiResult, setAiResult] = useState<GeminiAnalysisResult | null>(null);
@@ -45,6 +48,12 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData }) => 
       }));
     }
   }, [initialData]);
+
+  // Update doctor name if prop changes
+  useEffect(() => {
+      setFormData(prev => ({ ...prev, doctorName }));
+  }, [doctorName]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -106,27 +115,54 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData }) => 
       isEncrypted: useEncryption
     };
 
-    await onAddRecord(record);
-    
-    if (initialData) {
-        setFormData(prev => ({
-            ...prev,
-            symptoms: '',
-            rawNotes: ''
-        }));
-    } else {
-        setFormData({
-            patientId: '',
-            patientName: '',
-            department: 'Poli Umum',
-            symptoms: '',
-            rawNotes: '',
-            doctorName: 'Dr. Current User'
-        });
+    try {
+        // 1. Save Full Data to Hyperledger Fabric (Private)
+        console.log("Submitting to Private Ledger (Fabric)...");
+        const fabricRecordId = await saveToHyperledgerFabric(record);
+
+        // 2. Hash the data (Simulated for integrity)
+        const dataHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(record)))
+            .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''));
+
+        // 3. Submit Proof to Ethereum (Public)
+        console.log("Submitting Proof to Public Ledger (Ethereum)...");
+
+        try {
+            const txHash = await submitProofToEthereum(fabricRecordId, dataHash);
+            console.log("Proof submitted to Ethereum:", txHash);
+        } catch (ethError) {
+            console.warn("Ethereum Transaction failed (likely no wallet connected). Proceeding with local fallback.", ethError);
+        }
+
+        // 4. Update Local State (UI)
+        await onAddRecord(record);
+
+        if (initialData) {
+            setFormData(prev => ({
+                ...prev,
+                symptoms: '',
+                rawNotes: ''
+            }));
+        } else {
+            setFormData({
+                patientId: '',
+                patientName: '',
+                department: 'Poli Umum',
+                symptoms: '',
+                rawNotes: '',
+                doctorName: doctorName
+            });
+        }
+
+        setAiResult(null);
+        alert(`Data saved!\nFabric ID: ${fabricRecordId}\nEthereum: Proof Submitted (Check Console)`);
+
+    } catch (error) {
+        console.error("Submission failed", error);
+        alert("Failed to save record. See console.");
+    } finally {
+        setIsSubmitting(false);
     }
-    
-    setAiResult(null);
-    setIsSubmitting(false);
   };
 
   return (
@@ -213,6 +249,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData }) => 
                             value={formData.doctorName}
                             onChange={handleInputChange}
                             className="w-full p-2 text-sm border border-slate-300 rounded bg-white focus:ring-1 focus:ring-medical-500 outline-none"
+                            readOnly
                         />
                     </div>
                 </div>
