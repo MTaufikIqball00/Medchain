@@ -1,0 +1,48 @@
+version: '2.4'
+
+services:
+  # --- HYPERLEDGER FABRIC ---
+  orderer.example.com:
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_GENESISMETHOD=file
+      - ORDERER_GENERAL_GENESISFILE=/var/hyperledger/orderer/orderer.genesis.block
+    volumes:
+      - ./crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp:/var/hyperledger/orderer/msp
+    ports:
+      - 7050:7050
+
+  peer0.org1.example.com:
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_PEER_ID=peer0.org1.example.com
+      - CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP
+    volumes:
+      - ./crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/msp:/etc/hyperledger/fabric/msp
+    ports:
+      - 7051:7051
+
+  # --- ETHEREUM (GANACHE/GETH) ---
+  ethereum-node:
+    image: trufflesuite/ganache-cli:latest
+    ports:
+      - 8545:8545
+    command: ["--deterministic", "--networkId", "5777"]
+
+  # --- OFF-CHAIN API GATEWAY ---
+  api-gateway:
+    build: ../off-chain/api-gateway
+    ports:
+      - 4000:4000
+    environment:
+      - ENCRYPTION_KEY=my_secret_key_32_bytes_long_exact!
+      - FABRIC_CONNECTION_PROFILE=/app/network-config.yaml
+      - ETH_RPC_URL=http://ethereum-node:8545
+    depends_on:
+      - peer0.org1.example.com
+      - ethereum-node
+
+networks:
+  basic:
