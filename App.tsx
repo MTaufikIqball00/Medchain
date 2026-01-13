@@ -12,7 +12,8 @@ import {
   Cpu,
   Lock,
   Network,
-  ClipboardList
+  ClipboardList,
+  LogOut
 } from 'lucide-react';
 import { AppView, Block, MedicalRecordData } from './types';
 import { createGenesisBlock, createNewBlock, verifyChain } from './utils/blockchainUtils';
@@ -22,8 +23,17 @@ import BlockchainViewer from './components/BlockchainViewer';
 import PatientList from './components/PatientList';
 import PatientDetail from './components/PatientDetail';
 import Reports from './components/Reports';
+import Login from './components/Login';
+
+interface UserData {
+  name: string;
+  sip: string;
+  role: string;
+}
 
 const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<UserData | null>(null);
+
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [blockchain, setBlockchain] = useState<Block[]>([]);
   const [isChainValid, setIsChainValid] = useState<boolean>(true);
@@ -33,6 +43,24 @@ const App: React.FC = () => {
   
   // State for Patient Navigation
   const [selectedPatient, setSelectedPatient] = useState<{id: string, name: string} | null>(null);
+
+  // Check Login Session
+  useEffect(() => {
+    const session = localStorage.getItem('medchain_user');
+    if (session) {
+      setCurrentUser(JSON.parse(session));
+    }
+  }, []);
+
+  const handleLogin = (user: UserData) => {
+    localStorage.setItem('medchain_user', JSON.stringify(user));
+    setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('medchain_user');
+    setCurrentUser(null);
+  };
 
   // Load from Persistence or wait for Initialization
   useEffect(() => {
@@ -136,6 +164,11 @@ const App: React.FC = () => {
     </button>
   );
 
+  // --- LOGIN GUARD ---
+  if (!currentUser) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   // --- INITIALIZATION SCREEN (THE FIRST STEP) ---
   if (!isInitialized || isLoading) {
     return (
@@ -220,6 +253,18 @@ const App: React.FC = () => {
             </button>
           </div>
 
+          <div className="p-6 bg-slate-50 border-b border-slate-100">
+             <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-medical-100 flex items-center justify-center text-medical-700 font-bold border border-medical-200">
+                    {currentUser.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate">{currentUser.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{currentUser.role}</p>
+                </div>
+             </div>
+          </div>
+
           <nav className="flex-1 p-4 space-y-2">
             <NavItem view={AppView.DASHBOARD} icon={LayoutDashboard} label="Dashboard" />
             <NavItem view={AppView.PATIENTS_LIST} icon={Users} label="Data Pasien" />
@@ -228,20 +273,20 @@ const App: React.FC = () => {
             <NavItem view={AppView.BLOCKCHAIN} icon={Database} label="Blockchain Ledger" />
           </nav>
 
-          <div className="p-4">
+          <div className="p-4 border-t border-slate-100 space-y-2">
              <button 
                onClick={handleResetSystem}
-               className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+               className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
              >
                <Power className="w-3 h-3" /> Reset Node Data
              </button>
-          </div>
 
-          <div className="p-4 m-4 bg-medical-50 rounded-xl border border-medical-100">
-            <h4 className="text-sm font-semibold text-medical-900 mb-1">Secure & Immutable</h4>
-            <p className="text-xs text-medical-700 leading-relaxed">
-              Every record is hashed and linked to the previous block, ensuring data integrity across the network.
-            </p>
+             <button
+               onClick={handleLogout}
+               className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+             >
+               <LogOut className="w-3 h-3" /> Logout
+             </button>
           </div>
         </div>
       </aside>
@@ -280,8 +325,8 @@ const App: React.FC = () => {
                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                Node Active
              </div>
-             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
-               DR
+             <div className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded border border-indigo-100">
+               {currentUser.sip}
              </div>
           </div>
         </header>
@@ -295,7 +340,8 @@ const App: React.FC = () => {
           {currentView === AppView.ADD_RECORD && (
             <RecordForm 
               onAddRecord={handleAddRecord} 
-              initialData={selectedPatient ? { patientId: selectedPatient.id, patientName: selectedPatient.name } : null} 
+              initialData={selectedPatient ? { patientId: selectedPatient.id, patientName: selectedPatient.name } : null}
+              doctorName={currentUser.name}
             />
           )}
 
