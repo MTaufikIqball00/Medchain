@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Stethoscope, Lock, User, Key, ShieldCheck, Activity, Smartphone, AlertTriangle } from 'lucide-react';
+import { Stethoscope, Lock, User, Key, ShieldCheck, Activity, Smartphone, AlertTriangle, Info } from 'lucide-react';
 import { logAudit } from '../services/auditService';
 
 interface LoginProps {
@@ -11,6 +11,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [sip, setSip] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
+  const [showDemo, setShowDemo] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +55,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     await new Promise(r => setTimeout(r, 1000));
 
     // Mock Validation
-    if (sip === 'SATUSEHAT' || (sip && password === 'password123')) {
+    // Explicit Demo Account
+    if ((sip === '19800101' && password === 'medchain_demo') || sip === 'SATUSEHAT') {
         setFailedAttempts(0);
         logAudit('MFA_REQUEST', sip, 'Credentials valid, requesting MFA');
         setStep('MFA');
@@ -171,7 +173,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
              <div className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-1 rounded border border-blue-200">
                ISO 27001
              </div>
+             <button onClick={() => setShowDemo(!showDemo)} className="bg-slate-200 text-slate-600 px-2 py-1 rounded text-[10px] hover:bg-slate-300 transition-colors">
+                {showDemo ? 'Hide Demo' : 'Demo Account'}
+             </button>
           </div>
+
+          {showDemo && (
+              <div className="absolute top-12 right-4 w-48 bg-white border border-slate-200 shadow-lg p-2 rounded text-xs z-20">
+                  <p className="font-bold mb-1">Demo Credentials:</p>
+                  <p>SIP: <span className="font-mono bg-slate-100 px-1">19800101</span></p>
+                  <p>Pass: <span className="font-mono bg-slate-100 px-1">medchain_demo</span></p>
+                  <p className="mt-1 text-[10px] text-slate-400">OTP: Any 6 digits (e.g. 123456)</p>
+              </div>
+          )}
 
           <div className="text-center mb-8">
             <h3 className="text-2xl font-bold text-slate-800">
