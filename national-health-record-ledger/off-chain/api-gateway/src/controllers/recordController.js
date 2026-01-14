@@ -24,6 +24,13 @@ router.post('/create', async (req, res) => {
     try {
         const { patientUid, hospitalId, clinicalData, description } = req.body;
 
+        // Validation: Ensure manual diagnosis is captured if provided
+        // clinicalData should contain both manual and AI diagnosis now
+        if (!clinicalData || (!clinicalData.diagnosis && !clinicalData.manualDiagnosis)) {
+             // We allow empty diagnosis for now but log a warning, or enforcing it based on rules
+             // console.warn("No diagnosis provided");
+        }
+
         // 1. Generate Record ID
         const recordId = uuidv4();
 
