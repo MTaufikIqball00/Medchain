@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Loader2, Save, FileText, CheckCircle, User, Lock, ShieldCheck, Stethoscope } from 'lucide-react';
+import { Bot, Loader2, Save, FileText, CheckCircle, User, Lock, ShieldCheck, Stethoscope, Edit3, Clipboard } from 'lucide-react';
 import { MedicalRecordData, GeminiAnalysisResult } from '../types';
 import { analyzeMedicalNotes } from '../services/geminiService';
 import { encryptText } from '../utils/encryptionUtils';
@@ -31,6 +31,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
     department: 'Poli Umum',
     symptoms: '',
     rawNotes: '',
+    manualDiagnosis: '',
     doctorName: doctorName
   });
 
@@ -49,7 +50,6 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
     }
   }, [initialData]);
 
-  // Update doctor name if prop changes
   useEffect(() => {
       setFormData(prev => ({ ...prev, doctorName }));
   }, [doctorName]);
@@ -86,7 +86,20 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
     setIsSubmitting(true);
     
     // Prepare Data
-    let diagnosis = aiResult ? aiResult.suggestedDiagnosis : "Belum ada diagnosa otomatis";
+    let aiDiagnosisText = aiResult ? aiResult.suggestedDiagnosis : "";
+
+    // Combine Manual and AI Diagnosis
+    let finalDiagnosis = formData.manualDiagnosis;
+    if (aiDiagnosisText) {
+        if (finalDiagnosis) {
+            finalDiagnosis = `${finalDiagnosis} (AI Suggestion: ${aiDiagnosisText})`;
+        } else {
+            finalDiagnosis = `(AI Suggestion) ${aiDiagnosisText}`;
+        }
+    }
+
+    if (!finalDiagnosis) finalDiagnosis = "Belum ada diagnosa";
+
     let treatment = aiResult ? aiResult.recommendedActions.join(', ') : "Menunggu tindakan";
     let notes = formData.rawNotes;
     let symptoms = formData.symptoms;
@@ -94,7 +107,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
 
     // Encrypt if Private Mode is on
     if (useEncryption) {
-        diagnosis = await encryptText(diagnosis);
+        finalDiagnosis = await encryptText(finalDiagnosis);
         treatment = await encryptText(treatment);
         notes = await encryptText(notes);
         symptoms = await encryptText(symptoms);
@@ -108,7 +121,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
       symptoms,
       doctorName: formData.doctorName,
       notes,
-      diagnosis,
+      diagnosis: finalDiagnosis,
       treatment,
       aiAnalysis,
       timestamp: Date.now(),
@@ -117,49 +130,48 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
 
     try {
         // 1. Save Full Data to Hyperledger Fabric (Private)
-        console.log("Submitting to Private Ledger (Fabric)...");
         const fabricRecordId = await saveToHyperledgerFabric(record);
 
-        // 2. Hash the data (Simulated for integrity)
+        // 2. Hash the data
         const dataHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(record)))
             .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''));
 
         // 3. Submit Proof to Ethereum (Public)
-        console.log("Submitting Proof to Public Ledger (Ethereum)...");
-
         try {
             const txHash = await submitProofToEthereum(fabricRecordId, dataHash);
             console.log("Proof submitted to Ethereum:", txHash);
         } catch (ethError) {
-            console.warn("Ethereum Transaction failed (likely no wallet connected). Proceeding with local fallback.", ethError);
+            console.warn("Ethereum Transaction failed (simulation mode).", ethError);
         }
 
         // 4. Update Local State (UI)
         await onAddRecord(record);
 
+        // Reset form
+        const resetData = {
+            symptoms: '',
+            rawNotes: '',
+            manualDiagnosis: '',
+            doctorName: doctorName
+        };
+
         if (initialData) {
-            setFormData(prev => ({
-                ...prev,
-                symptoms: '',
-                rawNotes: ''
-            }));
+            setFormData(prev => ({ ...prev, ...resetData }));
         } else {
             setFormData({
                 patientId: '',
                 patientName: '',
                 department: 'Poli Umum',
-                symptoms: '',
-                rawNotes: '',
-                doctorName: doctorName
+                ...resetData
             });
         }
 
         setAiResult(null);
-        alert(`Data saved!\nFabric ID: ${fabricRecordId}\nEthereum: Proof Submitted (Check Console)`);
+        alert(`Data saved!\nFabric ID: ${fabricRecordId}\nEthereum: Proof Submitted`);
 
     } catch (error) {
         console.error("Submission failed", error);
-        alert("Failed to save record. See console.");
+        alert("Failed to save record.");
     } finally {
         setIsSubmitting(false);
     }
@@ -276,6 +288,35 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
                     className="w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none font-mono text-slate-600"
                     placeholder="Hasil TTV, pemeriksaan fisik, dll..."
                   />
+                </div>
+
+                {/* NEW: Manual Diagnosis Field */}
+                <div className="mb-4 bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-bold text-indigo-900 flex items-center gap-2">
+                        <Edit3 className="w-4 h-4" /> Diagnosa Dokter (Manual)
+                    </label>
+                    {aiResult && (
+                        <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({...prev, manualDiagnosis: aiResult.suggestedDiagnosis}))}
+                            className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium"
+                        >
+                            <Clipboard className="w-3 h-3" /> Salin dari AI
+                        </button>
+                    )}
+                  </div>
+                  <textarea
+                    name="manualDiagnosis"
+                    value={formData.manualDiagnosis}
+                    onChange={handleInputChange}
+                    rows={2}
+                    className="w-full p-2 text-sm border border-indigo-200 rounded focus:ring-1 focus:ring-indigo-500 outline-none bg-white font-medium text-slate-700"
+                    placeholder="Isi diagnosa medis berdasarkan penilaian klinis Anda (ICD-10)..."
+                  />
+                  <p className="text-[10px] text-indigo-400 mt-1">
+                    *Diagnosa manual akan disimpan sebagai prioritas.
+                  </p>
                 </div>
             </div>
 
