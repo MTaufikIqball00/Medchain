@@ -18,6 +18,8 @@
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "fabric-network": "^2.2.20",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "undici": "^7.18.2",
+    "uuid": "^13.0.0"
   }
 }
