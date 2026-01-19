@@ -8,8 +8,11 @@ module.exports = {
         PRIVATE_KEY: process.env.ETH_PRIVATE_KEY
     },
     FABRIC: {
-        CONNECTION_PROFILE: './connection-profile.json',
-        CHANNEL_NAME: 'mychannel',
-        CHAINCODE_NAME: 'medchain'
+        // Allow overriding the connection profile path via env var
+        CONNECTION_PROFILE_PATH: process.env.FABRIC_CONNECTION_PROFILE_PATH || './connection-profile.json',
+        CHANNEL_NAME: process.env.FABRIC_CHANNEL_NAME || 'mychannel',
+        CHAINCODE_NAME: process.env.FABRIC_CHAINCODE_NAME || 'medchain',
+        WALLET_PATH: process.env.FABRIC_WALLET_PATH || './wallet',
+        USER_ID: process.env.FABRIC_USER_ID || 'appUser'
     }
 };
