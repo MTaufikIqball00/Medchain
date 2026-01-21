@@ -3,7 +3,6 @@ import { Bot, Loader2, Save, FileText, CheckCircle, User, Lock, ShieldCheck, Ste
 import { MedicalRecordData, GeminiAnalysisResult } from '../types';
 import { analyzeMedicalNotes } from '../services/geminiService';
 import { encryptText } from '../utils/encryptionUtils';
-import { submitProofToEthereum } from '../services/ethereumService';
 import { saveToHyperledgerFabric } from '../services/fabricService';
 
 interface RecordFormProps {
@@ -132,20 +131,15 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
         // 1. Save Full Data to Hyperledger Fabric (Private)
         const fabricRecordId = await saveToHyperledgerFabric(record);
 
-        // 2. Hash the data
-        const dataHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(record)))
-            .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''));
+        // 2. Add fabricTxId to record before storing locally
+        const recordWithTxId = {
+            ...record,
+            fabricTxId: fabricRecordId.fabricTxId,
+            timestamp: Date.now()
+        };
 
-        // 3. Submit Proof to Ethereum (Public)
-        try {
-            const txHash = await submitProofToEthereum(fabricRecordId, dataHash);
-            console.log("Proof submitted to Ethereum:", txHash);
-        } catch (ethError) {
-            console.warn("Ethereum Transaction failed (simulation mode).", ethError);
-        }
-
-        // 4. Update Local State (UI)
-        await onAddRecord(record);
+        // 3. Update Local State (UI)
+        await onAddRecord(recordWithTxId);
 
         // Reset form
         const resetData = {
@@ -167,7 +161,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
         }
 
         setAiResult(null);
-        alert(`Data saved!\nFabric ID: ${fabricRecordId}\nEthereum: Proof Submitted`);
+        alert(`✅ Record saved!\nFabric TX: ${fabricRecordId.fabricTxId}`);
 
     } catch (error) {
         console.error("Submission failed", error);

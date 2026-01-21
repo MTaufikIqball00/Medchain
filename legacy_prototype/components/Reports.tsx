@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Block, MedicalRecordData } from '../types';
 import { decryptText } from '../utils/encryptionUtils';
-import { Printer, FileSpreadsheet, Search, Calendar, Filter, Loader2, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { getTransactionHistory } from '../services/fabricService';
+import { Printer, FileSpreadsheet, Search, Calendar, Filter, Loader2, FileText, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 
 interface ReportsProps {
   chain: Block[];
@@ -9,6 +10,7 @@ interface ReportsProps {
 
 interface DecryptedRow extends MedicalRecordData {
   originalIndex: number;
+  fabricTxId?: string;
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -25,6 +27,9 @@ const Reports: React.FC<ReportsProps> = ({ chain }) => {
   const [reportData, setReportData] = useState<DecryptedRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
+  const [txHistory, setTxHistory] = useState<any[]>([]);
+  const [showTxHistory, setShowTxHistory] = useState(false);
 
   // Filter blocks based on date range first to minimize decryption work
   const filteredBlocks = useMemo(() => {
@@ -97,6 +102,21 @@ const Reports: React.FC<ReportsProps> = ({ chain }) => {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleViewTransaction = async (fabricTxId: string) => {
+    setSelectedTxId(fabricTxId);
+    setShowTxHistory(true);
+    setIsLoading(true);
+    try {
+      const history = await getTransactionHistory(fabricTxId);
+      setTxHistory(history);
+    } catch (error) {
+      console.error("Failed to fetch transaction history:", error);
+      setTxHistory([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -195,6 +215,7 @@ const Reports: React.FC<ReportsProps> = ({ chain }) => {
                             <th className="px-3 py-2 border border-slate-300 text-xs font-bold">Diagnosa</th>
                             <th className="px-3 py-2 border border-slate-300 text-xs font-bold">Terapi</th>
                             <th className="px-3 py-2 border border-slate-300 text-xs font-bold w-32">Dokter</th>
+                            <th className="px-3 py-2 border border-slate-300 text-xs font-bold w-40 print:hidden">Fabric TX ID</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -228,6 +249,24 @@ const Reports: React.FC<ReportsProps> = ({ chain }) => {
                                     </td>
                                     <td className="px-3 py-2 border border-slate-300 text-xs text-slate-600 print:text-black">
                                         {row.doctorName}
+                                    </td>
+                                    <td className="px-3 py-2 border border-slate-300 text-xs text-slate-600 print:hidden">
+                                        {row.fabricTxId ? (
+                                            <div className="flex items-center gap-1">
+                                                <span className="font-mono text-[11px] text-slate-700 truncate max-w-[200px]" title={row.fabricTxId}>
+                                                    {row.fabricTxId.substring(0, 16)}...
+                                                </span>
+                                                <button
+                                                    onClick={() => handleViewTransaction(row.fabricTxId!)}
+                                                    className="p-1 hover:bg-medical-100 rounded transition-colors"
+                                                    title="View Fabric transaction details"
+                                                >
+                                                    <ExternalLink className="w-3 h-3 text-medical-600" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <span className="text-slate-400 italic text-xs">-</span>
+                                        )}
                                     </td>
                                 </tr>
                             ))
@@ -276,6 +315,79 @@ const Reports: React.FC<ReportsProps> = ({ chain }) => {
               <p className="text-xs font-bold border-b border-black inline-block min-w-[150px] pb-1">Admin Medis</p>
           </div>
       </div>
+
+      {/* Transaction History Modal */}
+      {showTxHistory && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 print:hidden">
+          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
+            <div className="sticky top-0 bg-medical-50 border-b border-medical-200 p-4 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-medical-800">Hyperledger Fabric Transaction History</h3>
+              <button
+                onClick={() => setShowTxHistory(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <div className="mb-4 p-3 bg-slate-100 rounded">
+                <p className="text-xs text-slate-600">Transaction ID:</p>
+                <p className="font-mono text-sm text-slate-800 break-all">{selectedTxId}</p>
+              </div>
+
+              {isLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-medical-500" />
+                </div>
+              ) : txHistory.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-slate-700">Transaction Details:</p>
+                  {txHistory.map((tx, idx) => (
+                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded p-3">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-slate-500">Timestamp:</p>
+                          <p className="font-semibold text-slate-800">{new Date(tx.timestamp).toLocaleString('id-ID')}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Status:</p>
+                          <p className="font-semibold text-green-600">Committed</p>
+                        </div>
+                        {tx.dataHash && (
+                          <div className="col-span-2">
+                            <p className="text-slate-500">Data Hash:</p>
+                            <p className="font-mono text-[11px] text-slate-700 break-all">{tx.dataHash}</p>
+                          </div>
+                        )}
+                        {tx.operator && (
+                          <div className="col-span-2">
+                            <p className="text-slate-500">Operator:</p>
+                            <p className="text-slate-800">{tx.operator}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-slate-500 text-sm">No transaction history available</p>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowTxHistory(false)}
+                className="px-4 py-2 bg-slate-200 text-slate-800 rounded hover:bg-slate-300 transition-colors text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media print {

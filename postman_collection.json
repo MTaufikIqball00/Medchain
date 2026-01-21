@@ -1,0 +1,159 @@
+{
+  "info": {
+    "_postman_id": "medchain-fabric-api-collection",
+    "name": "MedChain - Hyperledger Fabric API",
+    "description": "Complete API collection for testing MedChain Hyperledger Fabric Medical Records System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "health"]
+        },
+        "description": "Check if Fabric API is running and get status"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Create Record (NEW TRANSACTION)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patientName\": \"Ahmad Rizki\",\n  \"patientId\": \"P001\",\n  \"diagnosis\": \"Flu Biasa\",\n  \"treatment\": \"Istirahat dan minum air putih\",\n  \"symptoms\": \"Demam 38 derajat, batuk\",\n  \"department\": \"Poli Umum\",\n  \"doctorName\": \"Dr. Budi\",\n  \"dataHash\": \"abc123def456\",\n  \"isEncrypted\": true\n}"
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/records",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "records"]
+        },
+        "description": "Create new medical record and generate Fabric transaction ID"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get All Records",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/records",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "records"]
+        },
+        "description": "Retrieve all medical records from Hyperledger Fabric"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get Specific Record",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/records/REC-1705762520000-456",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "records", "REC-1705762520000-456"]
+        },
+        "description": "Get specific record by recordId. Replace REC-1705762520000-456 with actual recordId from Create Record response"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Get Transaction History BY TX ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/records/FABRIC_TX_ID_1705762520000/history",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "records", "FABRIC_TX_ID_1705762520000", "history"]
+        },
+        "description": "Get transaction history and Fabric block details. Replace FABRIC_TX_ID_1705762520000 with actual transactionId from Create Record response.\n\n⭐ THIS IS HOW TO CHECK FABRIC TX BLOCK!"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Update Record",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"diagnosis\": \"Flu Berat - Kondisi Memburuk\",\n  \"treatment\": \"Antibiotik + Istirahat 5 hari\",\n  \"dataHash\": \"xyz789abc123\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/records/REC-1705762520000-456",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "records", "REC-1705762520000-456"]
+        },
+        "description": "Update existing record. Creates new transaction ID. Replace recordId with actual value."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Delete Record",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:4000/api/fabric/records/REC-1705762520000-456",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "4000",
+          "path": ["api", "fabric", "records", "REC-1705762520000-456"]
+        },
+        "description": "Delete (soft delete) record. Replace recordId with actual value."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "recordId",
+      "value": "REC-1705762520000-456",
+      "type": "string"
+    },
+    {
+      "key": "fabricTxId",
+      "value": "FABRIC_TX_ID_1705762520000",
+      "type": "string"
+    }
+  ]
+}

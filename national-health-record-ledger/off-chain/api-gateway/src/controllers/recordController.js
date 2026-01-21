@@ -5,16 +5,15 @@ const { v4: uuidv4 } = require('uuid');
 const config = require('../../config');
 
 // Load Services based on Config
-let fabricService, ethereumService;
+// Only using Hyperledger Fabric (removed Ethereum dependency)
+let fabricService;
 
 if (config.BLOCKCHAIN_MODE === 'REAL') {
-    console.log("!!! RUNNING IN REAL BLOCKCHAIN MODE !!!");
+    console.log("!!! RUNNING IN REAL HYPERLEDGER FABRIC MODE !!!");
     fabricService = require('../services/realFabric');
-    ethereumService = require('../services/realEthereum');
 } else {
-    console.log("--- RUNNING IN MOCK SIMULATION MODE ---");
+    console.log("--- RUNNING IN MOCK SIMULATION MODE (FABRIC) ---");
     fabricService = require('../services/mockFabric');
-    ethereumService = require('../services/mockEthereum');
 }
 
 // Mock Off-Chain Storage (In production, this would be a MongoDB/Postgres with Encrypted Columns)
@@ -46,18 +45,14 @@ router.post('/create', async (req, res) => {
         // 4. Create Integrity Hash (SHA-256)
         const dataHash = hashData(clinicalData);
 
-        // 5. Submit Metadata to Hyperledger Fabric
+        // 5. Submit Metadata to Hyperledger Fabric (Only Fabric - Ethereum removed)
         const fabricTxId = await fabricService.submitTransaction('CreateMetadata', recordId, patientUid, hospitalId, offChainLoc, dataHash, description);
-
-        // 6. Anchor Hash to Ethereum
-        const txHash = await ethereumService.anchorHash(recordId, dataHash, hospitalId);
 
         res.json({
             success: true,
             recordId,
             fabricTxId,
-            ethereumTx: txHash,
-            message: "Record created and anchored"
+            message: "Record created and anchored on Hyperledger Fabric"
         });
 
     } catch (error) {
@@ -105,8 +100,7 @@ router.get('/:recordId', async (req, res) => {
 /**
  * UPDATE: Modify existing record (Right to Rectification)
  * - Updates off-chain data
- * - Anchors NEW hash to Ethereum
- * - Updates Fabric Metadata
+ * - Updates Fabric Metadata only (Ethereum removed)
  */
 router.put('/:recordId', async (req, res) => {
     try {
@@ -127,19 +121,14 @@ router.put('/:recordId', async (req, res) => {
         // 3. Hash New Data
         const dataHash = hashData(clinicalData);
 
-        // 4. Update Fabric Metadata (Simulated 'UpdateMetadata' call)
-        // In real chaincode, this would append a version to history
+        // 4. Update Fabric Metadata (Ethereum anchor removed)
         const fabricTxId = await fabricService.submitTransaction('UpdateMetadata', recordId, dataHash, description || "Updated Record");
-
-        // 5. Anchor NEW Hash to Ethereum (Append-only history)
-        const txHash = await ethereumService.anchorHash(recordId, dataHash, hospitalId);
 
         res.json({
             success: true,
-            message: "Record updated and re-anchored",
+            message: "Record updated on Hyperledger Fabric",
             version: recordsDB[recordId].version,
-            fabricTxId,
-            ethereumTx: txHash
+            fabricTxId
         });
 
     } catch (error) {
