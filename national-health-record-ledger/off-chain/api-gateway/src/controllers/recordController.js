@@ -3,6 +3,7 @@ const router = express.Router();
 const { encrypt, decrypt, hashData } = require('../utils/crypto');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../../config');
+const { getRecord, saveRecord } = require('../utils/db');
 
 // Load Services based on Config
 let fabricService, ethereumService;
@@ -17,9 +18,6 @@ if (config.BLOCKCHAIN_MODE === 'REAL') {
     ethereumService = require('../services/mockEthereum');
 }
 
-// Mock Off-Chain Storage (In production, this would be a MongoDB/Postgres with Encrypted Columns)
-const recordsDB = {};
-
 /**
  * CREATE: Add new medical record
  */
@@ -33,14 +31,16 @@ router.post('/create', async (req, res) => {
         // 2. Encrypt Clinical Data (AES-256)
         const encryptedData = encrypt(JSON.stringify(clinicalData));
 
-        // 3. Save Off-Chain
-        recordsDB[recordId] = {
+        // 3. Save Off-Chain (Persistent)
+        const recordData = {
             patientUid,
             encryptedData,
             hospitalId,
             version: 1,
             isDeleted: false
         };
+        saveRecord(recordId, recordData);
+
         const offChainLoc = `https://api.hospital-node.com/records/${recordId}`;
 
         // 4. Create Integrity Hash (SHA-256)
@@ -72,7 +72,13 @@ router.post('/create', async (req, res) => {
 router.get('/:recordId', async (req, res) => {
     try {
         const { recordId } = req.params;
-        const record = recordsDB[recordId];
+        const requesterId = req.headers['x-hospital-id'] || req.query.requesterId; // Expect requester ID in header or query
+
+        if (!requesterId) {
+             return res.status(401).json({ error: "Missing x-hospital-id header or requesterId query param" });
+        }
+
+        const record = getRecord(recordId);
 
         if (!record) {
             return res.status(404).json({ error: "Record not found off-chain" });
@@ -82,8 +88,9 @@ router.get('/:recordId', async (req, res) => {
             return res.status(410).json({ error: "Record has been deleted (Right to Erasure applied)" });
         }
 
-        // In Real Fabric mode, we would verify Access Control here via Chaincode Query
-        // await fabricService.evaluateTransaction('CheckAccess', recordId, requesterId);
+        // Verify Access Control via Chaincode
+        // This will throw if access is denied
+        await fabricService.evaluateTransaction('ReadMetadata', recordId, requesterId);
 
         // Decrypt
         const decryptedData = JSON.parse(decrypt(record.encryptedData));
@@ -98,6 +105,9 @@ router.get('/:recordId', async (req, res) => {
 
     } catch (error) {
         console.error(error);
+        if (error.message.includes("Access denied")) {
+            return res.status(403).json({ error: error.message });
+        }
         res.status(500).json({ error: error.message });
     }
 });
@@ -113,7 +123,9 @@ router.put('/:recordId', async (req, res) => {
         const { recordId } = req.params;
         const { clinicalData, description, hospitalId } = req.body;
 
-        if (!recordsDB[recordId] || recordsDB[recordId].isDeleted) {
+        const record = getRecord(recordId);
+
+        if (!record || record.isDeleted) {
             return res.status(404).json({ error: "Record not found or deleted" });
         }
 
@@ -121,8 +133,9 @@ router.put('/:recordId', async (req, res) => {
         const encryptedData = encrypt(JSON.stringify(clinicalData));
 
         // 2. Update Off-Chain
-        recordsDB[recordId].encryptedData = encryptedData;
-        recordsDB[recordId].version += 1;
+        record.encryptedData = encryptedData;
+        record.version += 1;
+        saveRecord(recordId, record);
 
         // 3. Hash New Data
         const dataHash = hashData(clinicalData);
@@ -137,7 +150,7 @@ router.put('/:recordId', async (req, res) => {
         res.json({
             success: true,
             message: "Record updated and re-anchored",
-            version: recordsDB[recordId].version,
+            version: record.version,
             fabricTxId,
             ethereumTx: txHash
         });
@@ -156,15 +169,17 @@ router.put('/:recordId', async (req, res) => {
 router.delete('/:recordId', async (req, res) => {
     try {
         const { recordId } = req.params;
+        const record = getRecord(recordId);
 
-        if (!recordsDB[recordId]) {
+        if (!record) {
             return res.status(404).json({ error: "Record not found" });
         }
 
         // 1. Off-Chain Deletion (Logical or Physical)
         // For compliance, we wipe the data but keep the ID to prevent ID reuse collision
-        recordsDB[recordId].encryptedData = "";
-        recordsDB[recordId].isDeleted = true;
+        record.encryptedData = "";
+        record.isDeleted = true;
+        saveRecord(recordId, record);
 
         // 2. Fabric Soft Delete (Immutable Audit Trail)
         const fabricTxId = await fabricService.submitTransaction('SoftDelete', recordId);
@@ -177,6 +192,46 @@ router.delete('/:recordId', async (req, res) => {
 
     } catch (error) {
         console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * VERIFY: Check Data Integrity
+ * - Hashes input data
+ * - Compares with On-Chain Metadata Hash
+ */
+router.post('/verify', async (req, res) => {
+    try {
+        const { recordId, clinicalData, requesterId } = req.body;
+
+        if (!recordId || !clinicalData || !requesterId) {
+            return res.status(400).json({ error: "Missing recordId, clinicalData, or requesterId" });
+        }
+
+        // 1. Calculate Hash of Provided Data
+        const calculatedHash = hashData(clinicalData);
+
+        // 2. Fetch On-Chain Metadata (Access Control Enforced)
+        const metadataBuffer = await fabricService.evaluateTransaction('ReadMetadata', recordId, requesterId);
+        const metadata = JSON.parse(metadataBuffer.toString());
+
+        // 3. Compare
+        const isMatch = (calculatedHash === metadata.dataHash);
+
+        res.json({
+            success: true,
+            isMatch,
+            recordId,
+            onChainHash: metadata.dataHash,
+            calculatedHash
+        });
+
+    } catch (error) {
+        console.error(error);
+        if (error.message.includes("Access denied")) {
+            return res.status(403).json({ error: "Access Denied: Cannot verify record you do not have access to." });
+        }
         res.status(500).json({ error: error.message });
     }
 });
