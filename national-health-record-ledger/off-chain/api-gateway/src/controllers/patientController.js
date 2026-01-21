@@ -4,11 +4,11 @@ const { generatePatientUID } = require('../utils/crypto');
 // Mock Database
 const patientsDB = {}; // Off-chain mapping NIK -> Data
 
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
     const { nik, name, dob, address, hospitalId } = req.body;
 
     // 1. Generate Pseudonym
-    const patientUid = generatePatientUID(nik);
+    const patientUid = await generatePatientUID(nik);
 
     // 2. Store PII Off-Chain (Mock DB)
     // In real system: Encrypted SQL Row

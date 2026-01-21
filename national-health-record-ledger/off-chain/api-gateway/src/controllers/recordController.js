@@ -29,7 +29,7 @@ router.post('/create', async (req, res) => {
         const recordId = uuidv4();
 
         // 2. Encrypt Clinical Data (AES-256)
-        const encryptedData = encrypt(JSON.stringify(clinicalData));
+        const encryptedData = await encrypt(JSON.stringify(clinicalData));
 
         // 3. Save Off-Chain (Persistent)
         const recordData = {
@@ -93,7 +93,8 @@ router.get('/:recordId', async (req, res) => {
         await fabricService.evaluateTransaction('ReadMetadata', recordId, requesterId);
 
         // Decrypt
-        const decryptedData = JSON.parse(decrypt(record.encryptedData));
+        const decryptedStr = await decrypt(record.encryptedData);
+        const decryptedData = JSON.parse(decryptedStr);
 
         res.json({
             success: true,
@@ -130,7 +131,7 @@ router.put('/:recordId', async (req, res) => {
         }
 
         // 1. Encrypt New Data
-        const encryptedData = encrypt(JSON.stringify(clinicalData));
+        const encryptedData = await encrypt(JSON.stringify(clinicalData));
 
         // 2. Update Off-Chain
         record.encryptedData = encryptedData;
@@ -216,12 +217,22 @@ router.post('/verify', async (req, res) => {
         const metadataBuffer = await fabricService.evaluateTransaction('ReadMetadata', recordId, requesterId);
         const metadata = JSON.parse(metadataBuffer.toString());
 
-        // 3. Compare
-        const isMatch = (calculatedHash === metadata.dataHash);
+        // 3. Compare with Fabric Metadata
+        const fabricMatch = (calculatedHash === metadata.dataHash);
+
+        // 4. Verify Against Ethereum Anchor (Cross-Chain Verification)
+        let ethereumMatch = false;
+        try {
+            ethereumMatch = await ethereumService.verifyIntegrity(recordId, calculatedHash);
+        } catch (err) {
+            console.warn("Ethereum verification failed:", err.message);
+        }
 
         res.json({
             success: true,
-            isMatch,
+            isMatch: fabricMatch && ethereumMatch,
+            fabricMatch,
+            ethereumMatch,
             recordId,
             onChainHash: metadata.dataHash,
             calculatedHash

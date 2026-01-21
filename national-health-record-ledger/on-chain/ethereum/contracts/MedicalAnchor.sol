@@ -18,11 +18,37 @@ contract MedicalAnchor {
     // Mapping from Fabric Record ID -> Proof
     mapping(string => RecordProof) public proofs;
 
+    // Authorized Hospital Nodes (Whitelist)
+    mapping(address => bool) public authorizedHospitals;
+    address public owner;
+
     event ProofAnchored(string indexed metaId, bytes32 indexed dataHash, address indexed hospital, uint256 timestamp);
+    event HospitalAuthorized(address indexed hospital);
+    event HospitalRevoked(address indexed hospital);
+
+    constructor() {
+        owner = msg.sender;
+        authorizedHospitals[msg.sender] = true; // Owner is authorized by default for testing
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can perform this action");
+        _;
+    }
 
     modifier onlyAuthorizedHospital() {
-        // In a real system, we would check a registry of authorized hospital wallets
+        require(authorizedHospitals[msg.sender], "Not an authorized hospital node");
         _;
+    }
+
+    function authorizeHospital(address _hospital) public onlyOwner {
+        authorizedHospitals[_hospital] = true;
+        emit HospitalAuthorized(_hospital);
+    }
+
+    function revokeHospital(address _hospital) public onlyOwner {
+        authorizedHospitals[_hospital] = false;
+        emit HospitalRevoked(_hospital);
     }
 
     /**
@@ -48,6 +74,10 @@ contract MedicalAnchor {
 
     function verifyIntegrity(string memory _metaId, string memory _candidateHashString) public view returns (bool) {
         bytes32 _candidateHash = keccak256(abi.encodePacked(_candidateHashString));
+        // If timestamp is 0, the record doesn't exist
+        if (proofs[_metaId].timestamp == 0) {
+            return false;
+        }
         return proofs[_metaId].dataHash == _candidateHash;
     }
 }

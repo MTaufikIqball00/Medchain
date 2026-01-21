@@ -7,6 +7,7 @@ const path = require('path');
 // For this script, we assume a simple ABI based on MedicalAnchor.sol
 const CONTRACT_ABI = [
   "function anchorHash(string memory _metaId, string memory _hashString) public",
+  "function verifyIntegrity(string memory _metaId, string memory _candidateHashString) public view returns (bool)",
   "event ProofAnchored(string indexed metaId, bytes32 indexed dataHash, address indexed hospital, uint256 timestamp)"
 ];
 
@@ -51,4 +52,18 @@ async function anchorHash(recordId, dataHash, senderId) {
     }
 }
 
-module.exports = { anchorHash };
+async function verifyIntegrity(recordId, hashString) {
+    await init();
+    console.log(`[ETHEREUM] Verifying Integrity for Record: ${recordId}`);
+    try {
+        const isValid = await contract.verifyIntegrity(recordId, hashString);
+        return isValid;
+    } catch (error) {
+        console.error(`[ETHEREUM] Verification Error: ${error.message}`);
+        // If proof doesn't exist, it might throw or return false depending on impl.
+        // The contract view returns bool, but if metaId key is missing, defaults might apply.
+        return false;
+    }
+}
+
+module.exports = { anchorHash, verifyIntegrity };

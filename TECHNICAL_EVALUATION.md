@@ -62,7 +62,7 @@ Berikut adalah evaluasi mendalam berdasarkan 7 poin pemeriksaan:
 *   **Enkripsi:** Menggunakan AES-256-CBC (`utils/crypto.js`) dengan IV unik untuk setiap enkripsi. Kunci enkripsi diambil dari environment variable.
 *   **Privasi Pasien:** Menggunakan `PatientUID` (pseudonym) hasil hash dari NIK + Salt, sehingga NIK asli tidak terekspos.
 *   **Trust:** Model Hybrid memisahkan data sensitif (Off-chain/Private) dengan bukti integritas (On-chain/Public), memenuhi prinsip "Trust but Verify".
-*   **Kekurangan Keamanan (Code Level):** Pada `MedicalAnchor.sol`, modifier `onlyAuthorizedHospital` masih kosong (placeholder). Dalam produksi, ini harus diimplementasikan untuk mencegah spamming ke public network oleh pihak tidak berwenang.
+*   **Kekurangan Keamanan (Code Level):** [FIXED] Pada `MedicalAnchor.sol`, modifier `onlyAuthorizedHospital` sebelumnya masih kosong. Kini telah diimplementasikan dengan whitelist.
 
 ---
 
@@ -70,7 +70,7 @@ Berikut adalah evaluasi mendalam berdasarkan 7 poin pemeriksaan:
 
 Proyek ini **sudah benar secara konsep dan arsitektur**. Implementasi teknis telah mencakup seluruh persyaratan fungsional utama untuk rekam medis berbasis privasi.
 
-### Rekomendasi Perbaikan:
-1.  **Lengkapi Security Modifier di Ethereum:** Implementasikan logika whitelist address pada `MedicalAnchor.sol` (`onlyAuthorizedHospital`).
-2.  **Verifikasi Ethereum di API:** Update endpoint `/verify` agar tidak hanya mengecek Fabric, tapi juga memvalidasi keberadaan anchor di Ethereum untuk jaminan immutability yang lebih kuat.
-3.  **Key Management:** Pastikan `ENCRYPTION_KEY` dan `UID_SALT` dikelola menggunakan Key Management System (KMS) yang aman di lingkungan produksi, bukan sekadar environment variable biasa.
+### Rekomendasi Perbaikan (Status Update):
+1.  **Lengkapi Security Modifier di Ethereum:** [SUDAH DIPERBAIKI] Logika whitelist address pada `MedicalAnchor.sol` (`onlyAuthorizedHospital`) telah diimplementasikan.
+2.  **Verifikasi Ethereum di API:** [SUDAH DIPERBAIKI] Endpoint `/verify` kini memvalidasi integritas data silang antara Fabric dan Ethereum.
+3.  **Key Management:** [SUDAH DIPERBAIKI] Kode telah direfaktor untuk menggunakan `keyManager.js`, yang mendukung pengambilan kunci asinkronus (simulasi KMS), menggantikan penggunaan environment variable langsung yang bersifat sinkronus.
