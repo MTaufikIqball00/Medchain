@@ -37,7 +37,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
   const [aiResult, setAiResult] = useState<GeminiAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [useEncryption, setUseEncryption] = useState(true);
+  const [useEncryption, setUseEncryption] = useState(false);
 
   useEffect(() => {
     if (initialData) {
@@ -50,7 +50,7 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
   }, [initialData]);
 
   useEffect(() => {
-      setFormData(prev => ({ ...prev, doctorName }));
+    setFormData(prev => ({ ...prev, doctorName }));
   }, [doctorName]);
 
 
@@ -83,18 +83,18 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
     }
 
     setIsSubmitting(true);
-    
+
     // Prepare Data
     let aiDiagnosisText = aiResult ? aiResult.suggestedDiagnosis : "";
 
     // Combine Manual and AI Diagnosis
     let finalDiagnosis = formData.manualDiagnosis;
     if (aiDiagnosisText) {
-        if (finalDiagnosis) {
-            finalDiagnosis = `${finalDiagnosis} (AI Suggestion: ${aiDiagnosisText})`;
-        } else {
-            finalDiagnosis = `(AI Suggestion) ${aiDiagnosisText}`;
-        }
+      if (finalDiagnosis) {
+        finalDiagnosis = `${finalDiagnosis} (AI Suggestion: ${aiDiagnosisText})`;
+      } else {
+        finalDiagnosis = `(AI Suggestion) ${aiDiagnosisText}`;
+      }
     }
 
     if (!finalDiagnosis) finalDiagnosis = "Belum ada diagnosa";
@@ -104,14 +104,8 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
     let symptoms = formData.symptoms;
     let aiAnalysis = aiResult ? aiResult.summary : undefined;
 
-    // Encrypt if Private Mode is on
-    if (useEncryption) {
-        finalDiagnosis = await encryptText(finalDiagnosis);
-        treatment = await encryptText(treatment);
-        notes = await encryptText(notes);
-        symptoms = await encryptText(symptoms);
-        if (aiAnalysis) aiAnalysis = await encryptText(aiAnalysis);
-    }
+    // Encryption moved to Backend for consistency. Sending plain text.
+    // if (useEncryption) { ... }
 
     const record: MedicalRecordData = {
       patientId: formData.patientId,
@@ -128,46 +122,46 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
     };
 
     try {
-        // 1. Save Full Data to Hyperledger Fabric (Private)
-        const fabricRecordId = await saveToHyperledgerFabric(record);
+      // 1. Save Full Data to Hyperledger Fabric (Private)
+      const fabricRecordId = await saveToHyperledgerFabric(record);
 
-        // 2. Add fabricTxId to record before storing locally
-        const recordWithTxId = {
-            ...record,
-            fabricTxId: fabricRecordId.fabricTxId,
-            timestamp: Date.now()
-        };
+      // 2. Add fabricTxId to record before storing locally
+      const recordWithTxId = {
+        ...record,
+        fabricTxId: fabricRecordId.fabricTxId,
+        timestamp: Date.now()
+      };
 
-        // 3. Update Local State (UI)
-        await onAddRecord(recordWithTxId);
+      // 3. Update Local State (UI)
+      await onAddRecord(recordWithTxId);
 
-        // Reset form
-        const resetData = {
-            symptoms: '',
-            rawNotes: '',
-            manualDiagnosis: '',
-            doctorName: doctorName
-        };
+      // Reset form
+      const resetData = {
+        symptoms: '',
+        rawNotes: '',
+        manualDiagnosis: '',
+        doctorName: doctorName
+      };
 
-        if (initialData) {
-            setFormData(prev => ({ ...prev, ...resetData }));
-        } else {
-            setFormData({
-                patientId: '',
-                patientName: '',
-                department: 'Poli Umum',
-                ...resetData
-            });
-        }
+      if (initialData) {
+        setFormData(prev => ({ ...prev, ...resetData }));
+      } else {
+        setFormData({
+          patientId: '',
+          patientName: '',
+          department: 'Poli Umum',
+          ...resetData
+        });
+      }
 
-        setAiResult(null);
-        alert(`✅ Record saved!\nFabric TX: ${fabricRecordId.fabricTxId}`);
+      setAiResult(null);
+      alert(`✅ Record saved!\nFabric TX: ${fabricRecordId.fabricTxId}`);
 
     } catch (error) {
-        console.error("Submission failed", error);
-        alert("Failed to save record.");
+      console.error("Submission failed", error);
+      alert("Failed to save record.");
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -176,13 +170,13 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
       <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
         <div className="bg-medical-600 p-4 text-white border-b border-medical-700 flex justify-between items-center">
           <div>
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                {initialData ? 'Input Pemeriksaan (Rawat Jalan)' : 'Pendaftaran Pasien & Pemeriksaan Baru'}
-              </h2>
-              <p className="text-medical-100 text-xs opacity-90 mt-0.5">
-                Input Data Rekam Medis Elektronik (RME)
-              </p>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              {initialData ? 'Input Pemeriksaan (Rawat Jalan)' : 'Pendaftaran Pasien & Pemeriksaan Baru'}
+            </h2>
+            <p className="text-medical-100 text-xs opacity-90 mt-0.5">
+              Input Data Rekam Medis Elektronik (RME)
+            </p>
           </div>
           <div className="px-3 py-1 bg-medical-700 rounded text-xs font-mono">
             Form ID: #RME-{new Date().getFullYear()}
@@ -190,165 +184,165 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
         </div>
 
         <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           {/* Left Column: Input Form */}
           <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-5">
-            
+
             {/* Identitas Pasien Panel */}
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2 mb-3 border-b border-slate-200 pb-2">
-                    <User className="w-4 h-4 text-medical-600" /> Identitas Pasien
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">No. Rekam Medis (RM)</label>
-                      <div className="relative">
-                        <input
-                            type="text"
-                            name="patientId"
-                            value={formData.patientId}
-                            onChange={handleInputChange}
-                            disabled={!!initialData}
-                            className={`w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none ${initialData ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
-                            placeholder="Contoh: RM-00123"
-                        />
-                        {initialData && <Lock className="w-3 h-3 text-slate-400 absolute right-2 top-2.5" />}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Nama Lengkap Pasien</label>
-                      <input
-                          type="text"
-                          name="patientName"
-                          value={formData.patientName}
-                          onChange={handleInputChange}
-                          disabled={!!initialData}
-                          className={`w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none ${initialData ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
-                          placeholder="Nama Pasien"
-                      />
-                    </div>
+              <h3 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2 mb-3 border-b border-slate-200 pb-2">
+                <User className="w-4 h-4 text-medical-600" /> Identitas Pasien
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">No. Rekam Medis (RM)</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="patientId"
+                      value={formData.patientId}
+                      onChange={handleInputChange}
+                      disabled={!!initialData}
+                      className={`w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none ${initialData ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
+                      placeholder="Contoh: RM-00123"
+                    />
+                    {initialData && <Lock className="w-3 h-3 text-slate-400 absolute right-2 top-2.5" />}
+                  </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nama Lengkap Pasien</label>
+                  <input
+                    type="text"
+                    name="patientName"
+                    value={formData.patientName}
+                    onChange={handleInputChange}
+                    disabled={!!initialData}
+                    className={`w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none ${initialData ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
+                    placeholder="Nama Pasien"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Pemeriksaan Panel */}
             <div className="p-1">
-                <div className="flex gap-4 mb-4">
-                    <div className="w-1/2">
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Unit Pelayanan / Poli</label>
-                        <select
-                            name="department"
-                            value={formData.department}
-                            onChange={handleInputChange}
-                            className="w-full p-2 text-sm border border-slate-300 rounded bg-white focus:ring-1 focus:ring-medical-500 outline-none"
-                        >
-                            {DEPARTMENTS.map(dept => (
-                                <option key={dept} value={dept}>{dept}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="w-1/2">
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Dokter Pemeriksa</label>
-                        <input
-                            type="text"
-                            name="doctorName"
-                            value={formData.doctorName}
-                            onChange={handleInputChange}
-                            className="w-full p-2 text-sm border border-slate-300 rounded bg-white focus:ring-1 focus:ring-medical-500 outline-none"
-                            readOnly
-                        />
-                    </div>
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Anamnesa / Keluhan Utama</label>
-                  <textarea
-                    name="symptoms"
-                    value={formData.symptoms}
+              <div className="flex gap-4 mb-4">
+                <div className="w-1/2">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Unit Pelayanan / Poli</label>
+                  <select
+                    name="department"
+                    value={formData.department}
                     onChange={handleInputChange}
-                    rows={2}
-                    className="w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none"
-                    placeholder="Keluhan yang dirasakan pasien..."
+                    className="w-full p-2 text-sm border border-slate-300 rounded bg-white focus:ring-1 focus:ring-medical-500 outline-none"
+                  >
+                    {DEPARTMENTS.map(dept => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-1/2">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Dokter Pemeriksa</label>
+                  <input
+                    type="text"
+                    name="doctorName"
+                    value={formData.doctorName}
+                    onChange={handleInputChange}
+                    className="w-full p-2 text-sm border border-slate-300 rounded bg-white focus:ring-1 focus:ring-medical-500 outline-none"
+                    readOnly
                   />
                 </div>
+              </div>
 
-                <div className="mb-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Pemeriksaan Fisik & Catatan Dokter (Objective)</label>
-                  <textarea
-                    name="rawNotes"
-                    value={formData.rawNotes}
-                    onChange={handleInputChange}
-                    rows={4}
-                    className="w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none font-mono text-slate-600"
-                    placeholder="Hasil TTV, pemeriksaan fisik, dll..."
-                  />
-                </div>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Anamnesa / Keluhan Utama</label>
+                <textarea
+                  name="symptoms"
+                  value={formData.symptoms}
+                  onChange={handleInputChange}
+                  rows={2}
+                  className="w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none"
+                  placeholder="Keluhan yang dirasakan pasien..."
+                />
+              </div>
 
-                {/* NEW: Manual Diagnosis Field */}
-                <div className="mb-4 bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-sm font-bold text-indigo-900 flex items-center gap-2">
-                        <Edit3 className="w-4 h-4" /> Diagnosa Dokter (Manual)
-                    </label>
-                    {aiResult && (
-                        <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({...prev, manualDiagnosis: aiResult.suggestedDiagnosis}))}
-                            className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium"
-                        >
-                            <Clipboard className="w-3 h-3" /> Salin dari AI
-                        </button>
-                    )}
-                  </div>
-                  <textarea
-                    name="manualDiagnosis"
-                    value={formData.manualDiagnosis}
-                    onChange={handleInputChange}
-                    rows={2}
-                    className="w-full p-2 text-sm border border-indigo-200 rounded focus:ring-1 focus:ring-indigo-500 outline-none bg-white font-medium text-slate-700"
-                    placeholder="Isi diagnosa medis berdasarkan penilaian klinis Anda (ICD-10)..."
-                  />
-                  <p className="text-[10px] text-indigo-400 mt-1">
-                    *Diagnosa manual akan disimpan sebagai prioritas.
-                  </p>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Pemeriksaan Fisik & Catatan Dokter (Objective)</label>
+                <textarea
+                  name="rawNotes"
+                  value={formData.rawNotes}
+                  onChange={handleInputChange}
+                  rows={4}
+                  className="w-full p-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-medical-500 outline-none font-mono text-slate-600"
+                  placeholder="Hasil TTV, pemeriksaan fisik, dll..."
+                />
+              </div>
+
+              {/* NEW: Manual Diagnosis Field */}
+              <div className="mb-4 bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-bold text-indigo-900 flex items-center gap-2">
+                    <Edit3 className="w-4 h-4" /> Diagnosa Dokter (Manual)
+                  </label>
+                  {aiResult && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, manualDiagnosis: aiResult.suggestedDiagnosis }))}
+                      className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium"
+                    >
+                      <Clipboard className="w-3 h-3" /> Salin dari AI
+                    </button>
+                  )}
                 </div>
+                <textarea
+                  name="manualDiagnosis"
+                  value={formData.manualDiagnosis}
+                  onChange={handleInputChange}
+                  rows={2}
+                  className="w-full p-2 text-sm border border-indigo-200 rounded focus:ring-1 focus:ring-indigo-500 outline-none bg-white font-medium text-slate-700"
+                  placeholder="Isi diagnosa medis berdasarkan penilaian klinis Anda (ICD-10)..."
+                />
+                <p className="text-[10px] text-indigo-400 mt-1">
+                  *Diagnosa manual akan disimpan sebagai prioritas.
+                </p>
+              </div>
             </div>
 
             {/* Actions */}
             <div className="flex flex-col md:flex-row gap-4 pt-2 border-t border-slate-100">
-               {/* Privacy Toggle */}
-               <label className="flex items-center gap-2 cursor-pointer bg-amber-50 px-3 py-2 rounded border border-amber-100 md:w-auto w-full">
-                <input 
-                  type="checkbox" 
-                  checked={useEncryption} 
+              {/* Privacy Toggle */}
+              <label className="flex items-center gap-2 cursor-pointer bg-amber-50 px-3 py-2 rounded border border-amber-100 md:w-auto w-full">
+                <input
+                  type="checkbox"
+                  checked={useEncryption}
                   onChange={(e) => setUseEncryption(e.target.checked)}
                   className="w-4 h-4 text-medical-600 rounded border-slate-300 focus:ring-medical-500"
                 />
                 <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3 text-amber-600" /> Mode Privat (Enkripsi)
-                    </span>
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-amber-600" /> Mode Privat (Enkripsi)
+                  </span>
                 </div>
               </label>
 
               <div className="flex-1 flex gap-2 justify-end">
                 <button
-                    type="button"
-                    onClick={handleAnalyze}
-                    disabled={isAnalyzing}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+                  type="button"
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
                 >
-                    {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
-                    Analisa AI
+                  {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
+                  Analisa AI
                 </button>
-                
+
                 <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="bg-medical-600 hover:bg-medical-700 text-white py-2 px-6 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-medical-600 hover:bg-medical-700 text-white py-2 px-6 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
                 >
-                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Simpan Data
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Simpan Data
                 </button>
               </div>
             </div>
@@ -357,59 +351,58 @@ const RecordForm: React.FC<RecordFormProps> = ({ onAddRecord, initialData, docto
           {/* Right Column: AI Analysis Result */}
           <div className="bg-slate-50 rounded-lg border border-slate-200 flex flex-col h-full">
             <div className="p-4 border-b border-slate-200 bg-white rounded-t-lg">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <Stethoscope className="w-4 h-4 text-indigo-600" />
                 Hasil Analisa Medis (AI)
-                </h3>
+              </h3>
             </div>
-            
+
             <div className="p-4 flex-1 overflow-y-auto">
-                {!aiResult ? (
+              {!aiResult ? (
                 <div className="text-slate-400 text-xs text-center mt-8">
-                    <p>Isi Anamnesa dan Catatan Dokter, lalu klik "Analisa AI" untuk mendapatkan:</p>
-                    <ul className="mt-4 space-y-2 text-left px-8 list-disc">
+                  <p>Isi Anamnesa dan Catatan Dokter, lalu klik "Analisa AI" untuk mendapatkan:</p>
+                  <ul className="mt-4 space-y-2 text-left px-8 list-disc">
                     <li>Saran Diagnosa (ICD-10 style)</li>
                     <li>Rencana Terapi</li>
                     <li>Ringkasan Medis</li>
-                    </ul>
+                  </ul>
                 </div>
-                ) : (
+              ) : (
                 <div className="space-y-4 animate-fade-in text-sm">
-                    <div className="bg-white p-3 rounded border border-indigo-100 shadow-sm">
-                        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide block mb-1">Saran Diagnosa</span>
-                        <p className="font-bold text-slate-800">{aiResult.suggestedDiagnosis}</p>
-                    </div>
+                  <div className="bg-white p-3 rounded border border-indigo-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wide block mb-1">Saran Diagnosa</span>
+                    <p className="font-bold text-slate-800">{aiResult.suggestedDiagnosis}</p>
+                  </div>
 
-                    <div className="bg-white p-3 rounded border border-blue-100 shadow-sm">
-                        <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide block mb-1">Ringkasan Medis</span>
-                        <p className="text-slate-600 leading-relaxed text-xs">{aiResult.summary}</p>
-                    </div>
+                  <div className="bg-white p-3 rounded border border-blue-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide block mb-1">Ringkasan Medis</span>
+                    <p className="text-slate-600 leading-relaxed text-xs">{aiResult.summary}</p>
+                  </div>
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">Tingkat Keparahan:</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                            aiResult.severity === 'Critical' ? 'bg-red-100 text-red-700 border-red-200' :
-                            aiResult.severity === 'High' ? 'bg-orange-100 text-orange-700 border-orange-200' :
-                            aiResult.severity === 'Moderate' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                            'bg-green-100 text-green-700 border-green-200'
-                        }`}>
-                            {aiResult.severity}
-                        </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Tingkat Keparahan:</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${aiResult.severity === 'Critical' ? 'bg-red-100 text-red-700 border-red-200' :
+                      aiResult.severity === 'High' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                        aiResult.severity === 'Moderate' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                          'bg-green-100 text-green-700 border-green-200'
+                      }`}>
+                      {aiResult.severity}
+                    </span>
+                  </div>
 
-                    <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Rekomendasi Tindakan / Terapi</span>
-                        <ul className="space-y-1">
-                            {aiResult.recommendedActions.map((action, idx) => (
-                            <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 bg-white p-2 rounded border border-slate-100">
-                                <CheckCircle className="w-3 h-3 text-green-500 mt-0.5 shrink-0" />
-                                {action}
-                            </li>
-                            ))}
-                        </ul>
-                    </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Rekomendasi Tindakan / Terapi</span>
+                    <ul className="space-y-1">
+                      {aiResult.recommendedActions.map((action, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-xs text-slate-700 bg-white p-2 rounded border border-slate-100">
+                          <CheckCircle className="w-3 h-3 text-green-500 mt-0.5 shrink-0" />
+                          {action}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
-                )}
+              )}
             </div>
           </div>
         </div>
