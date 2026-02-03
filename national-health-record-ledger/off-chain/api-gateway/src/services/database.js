@@ -116,6 +116,20 @@ async function initializeDatabase() {
             CREATE INDEX IF NOT EXISTS idx_permissions_hospital ON access_permissions(hospital_id);
         `);
 
+        // SEED DATA: Ensure Default Hospitals Exist
+        const hospitals = [
+            { id: 'RS-A', name: 'Rumah Sakit A', eth: process.env.ETH_PRIVATE_KEY_RS_A || '0x0000000000000000000000000000000000000000' },
+            { id: 'RS-B', name: 'Rumah Sakit B', eth: process.env.ETH_PRIVATE_KEY_RS_B || '0x0000000000000000000000000000000000000001' }
+        ];
+
+        for (const h of hospitals) {
+            await client.query(`
+                INSERT INTO hospitals (hospital_id, name, eth_address, password_hash)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (hospital_id) DO NOTHING
+            `, [h.id, h.name, 'MOCK_ETH_ADDR_' + h.id, 'hashed_password']);
+        }
+
         console.log('[DB] ✅ Database tables initialized successfully');
     } catch (error) {
         console.error('[DB] ❌ Failed to initialize database:', error);

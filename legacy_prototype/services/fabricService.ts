@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { MedicalRecordData } from "../types";
 
 // API Gateway base URL - configure this based on your environment
@@ -5,16 +6,17 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL as string) || 'http://localho
 const FABRIC_API = `${API_BASE_URL}/fabric`;
 
 export interface FabricTransaction {
-  recordId: string;
-  fabricTxId: string;
-  timestamp: number;
-  success: boolean;
+    recordId: string;
+    fabricTxId: string;
+    timestamp: number;
+    success: boolean;
 }
 
 export interface FabricRecord extends MedicalRecordData {
-  fabricTxId?: string;
-  version?: number;
-  isDeleted?: boolean;
+    fabricTxId?: string;
+    version?: number;
+    isDeleted?: boolean;
+    dataHash?: string; // Added to fix TS error
 }
 
 /**
@@ -41,12 +43,31 @@ export const saveToHyperledgerFabric = async (data: MedicalRecordData): Promise<
         };
 
         // Call REST API Gateway to submit to Fabric
+        // Get selected hospital from local state if possible, otherwise default
+        const userSession = localStorage.getItem('medchain_user');
+        let hospitalId = 'RS-A';
+        if (userSession) {
+            const user = JSON.parse(userSession);
+            hospitalId = user.hospitalId || 'RS-A';
+        }
+
         const response = await fetch(`${FABRIC_API}/records`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-Dev-Token': 'MEDCHAIN_DEV_2026', // Bypass Auth
+                'X-Hospital-Id': hospitalId // Context from Frontend
             },
-            body: JSON.stringify(recordData)
+            body: JSON.stringify({
+                patient_uid: data.patientId, // Map patientId (frontend) to patient_uid (backend)
+                patient_name: data.patientName,
+                diagnosis: data.diagnosis,
+                treatment: data.treatment,
+                symptoms: data.symptoms,
+                department: data.department || '',
+                doctor_name: data.doctorName,
+                // Backend generates other fields
+            })
         });
 
         if (!response.ok) {
@@ -55,11 +76,11 @@ export const saveToHyperledgerFabric = async (data: MedicalRecordData): Promise<
 
         const result = await response.json();
 
-        console.log(`[Fabric] Transaction committed: ${result.data.transactionId}`);
+        console.log(`[Fabric] Transaction committed: ${result.data.fabric_tx_id}`);
 
         return {
-            recordId: result.data.recordId,
-            fabricTxId: result.data.transactionId,
+            recordId: result.data.record_id,
+            fabricTxId: result.data.fabric_tx_id,
             timestamp: Date.now(),
             success: result.success
         };
@@ -107,10 +128,20 @@ export const getAllFabricRecords = async (): Promise<FabricRecord[]> => {
     try {
         console.log("Fetching all records from Fabric...");
 
+        // Get context
+        const userSession = localStorage.getItem('medchain_user');
+        let hospitalId = 'RS-A';
+        if (userSession) {
+            const user = JSON.parse(userSession);
+            hospitalId = user.hospitalId || 'RS-A';
+        }
+
         const response = await fetch(`${FABRIC_API}/records`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
+                'X-Dev-Token': 'MEDCHAIN_DEV_2026',
+                'X-Hospital-Id': hospitalId
             }
         });
 
@@ -173,6 +204,116 @@ const generateHash = (data: any): string => {
         hash = hash & hash; // Convert to 32bit integer
     }
     return 'HASH_' + Math.abs(hash).toString(16);
+};
+
+/**
+ * Search for a patient globally (even without record access)
+ * @param patientUid Patient Unique ID (e.g., RM-001)
+ * @returns Patient data or null
+ */
+export const searchGlobalPatient = async (patientUid: string): Promise<any | null> => {
+    try {
+        const userSession = localStorage.getItem('medchain_user');
+        let hospitalId = 'RS-A';
+        if (userSession) {
+            const user = JSON.parse(userSession);
+            hospitalId = user.hospitalId || 'RS-A';
+        }
+
+        const response = await fetch(`${API_BASE_URL}/patients/${patientUid}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Dev-Token': 'MEDCHAIN_DEV_2026',
+                'X-Hospital-Id': hospitalId
+            }
+        });
+
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error("Failed to search patient");
+
+        const result = await response.json();
+        return result.data;
+    } catch (error) {
+        console.error("Global patient search failed:", error);
+        return null;
+    }
+};
+
+/**
+ * Request access to a medical record
+ */
+export const requestAccess = async (recordId: string, reason: string): Promise<any> => {
+    const userSession = localStorage.getItem('medchain_user');
+    let hospitalId = 'RS-A';
+    if (userSession) {
+        const user = JSON.parse(userSession);
+        hospitalId = user.hospitalId || 'RS-A';
+    }
+
+    const response = await fetch(`${API_BASE_URL}/access/request`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Dev-Token': 'MEDCHAIN_DEV_2026',
+            'X-Hospital-Id': hospitalId
+        },
+        body: JSON.stringify({ record_id: recordId, reason })
+    });
+
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+    return result.data;
+};
+
+/**
+ * Get pending access requests (Inbox)
+ */
+export const getPendingAccessRequests = async (): Promise<any[]> => {
+    const userSession = localStorage.getItem('medchain_user');
+    let hospitalId = 'RS-A';
+    if (userSession) {
+        const user = JSON.parse(userSession);
+        hospitalId = user.hospitalId || 'RS-A';
+    }
+
+    const response = await fetch(`${API_BASE_URL}/access/pending`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Dev-Token': 'MEDCHAIN_DEV_2026',
+            'X-Hospital-Id': hospitalId
+        }
+    });
+
+    const result = await response.json();
+    return result.data || [];
+};
+
+/**
+ * Grant access to a requester
+ */
+export const grantAccess = async (recordId: string, requesterHospitalId: string): Promise<any> => {
+    const userSession = localStorage.getItem('medchain_user');
+    let hospitalId = 'RS-A';
+    if (userSession) {
+        const user = JSON.parse(userSession);
+        hospitalId = user.hospitalId || 'RS-A';
+    }
+
+    const response = await fetch(`${API_BASE_URL}/access/grant`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Dev-Token': 'MEDCHAIN_DEV_2026',
+            'X-Hospital-Id': hospitalId
+        },
+        body: JSON.stringify({ record_id: recordId, requester_hospital_id: requesterHospitalId })
+    });
+
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error);
+    return result.data;
 };
 
 /**

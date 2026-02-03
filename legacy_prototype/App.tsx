@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  PlusCircle, 
-  Database, 
+import {
+  LayoutDashboard,
+  PlusCircle,
+  Database,
   Stethoscope,
   Menu,
   X,
@@ -24,11 +24,13 @@ import PatientList from './components/PatientList';
 import PatientDetail from './components/PatientDetail';
 import Reports from './components/Reports';
 import Login from './components/Login';
+import AccessManager from './components/AccessManager'; // New component
 
 interface UserData {
   name: string;
   sip: string;
   role: string;
+  hospitalId: string; // Added hospitalId
 }
 
 const App: React.FC = () => {
@@ -40,9 +42,9 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // State for Patient Navigation
-  const [selectedPatient, setSelectedPatient] = useState<{id: string, name: string} | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<{ id: string, name: string } | null>(null);
 
   // Check Login Session
   useEffect(() => {
@@ -55,6 +57,9 @@ const App: React.FC = () => {
   const handleLogin = (user: UserData) => {
     localStorage.setItem('medchain_user', JSON.stringify(user));
     setCurrentUser(user);
+    // Reset view to dashboard on new login logic if needed
+    setCurrentView(AppView.DASHBOARD);
+    setSelectedPatient(null);
   };
 
   const handleLogout = () => {
@@ -62,35 +67,81 @@ const App: React.FC = () => {
     setCurrentUser(null);
   };
 
-  // Load from Persistence or wait for Initialization
-  useEffect(() => {
-    const loadChain = async () => {
-      const savedChain = localStorage.getItem('medchain_ledger');
-      if (savedChain) {
-        try {
-          const parsedChain = JSON.parse(savedChain);
-          if (Array.isArray(parsedChain) && parsedChain.length > 0) {
-            setBlockchain(parsedChain);
-            setIsInitialized(true);
-            const isValid = await verifyChain(parsedChain);
-            setIsChainValid(isValid);
-          }
-        } catch (e) {
-          console.error("Failed to parse local chain", e);
-          localStorage.removeItem('medchain_ledger');
-        }
-      }
-      setIsLoading(false);
-    };
-    loadChain();
-  }, []);
+  // Load from API (Backend) instead of LocalStorage
+  const loadDataFromBackend = async () => {
+    setIsLoading(true);
+    try {
+      // Dynamic import to avoid circular dependency issues if any
+      const { getAllFabricRecords } = await import('./services/fabricService');
+      const records = await getAllFabricRecords();
 
-  // Persistence Effect
-  useEffect(() => {
-    if (blockchain.length > 0) {
-      localStorage.setItem('medchain_ledger', JSON.stringify(blockchain));
+      if (records && records.length > 0) {
+        // Map API records to Block structure for the Frontend UI
+        const mappedChain: Block[] = records.map((rec: any, index) => ({
+          index: index + 1,
+          timestamp: rec.timestamp || Date.now(),
+          data: {
+            patientId: rec.patient_uid || rec.patientId, // Map backend to frontend
+            patientName: rec.patient_name || rec.patientName || 'Unknown',
+            department: rec.department || '',
+            symptoms: rec.symptoms || '',
+            diagnosis: rec.diagnosis || '',
+            treatment: rec.treatment || '',
+            doctorName: rec.doctor_name || rec.doctorName || 'Unknown',
+            notes: rec.notes || '', // Notes might be empty from backend
+            aiAnalysis: rec.aiAnalysis || '',
+            isEncrypted: rec.is_encrypted || rec.isEncrypted || false,
+            timestamp: rec.timestamp || Date.now()
+          },
+          previousHash: "MOCK_HASH",
+          hash: rec.fabricTxId || "MOCK_HASH",
+          nonce: 0
+        }));
+
+        // Prepend Genesis Block for UI consistency
+        const genesis = await createGenesisBlock();
+        setBlockchain([genesis, ...mappedChain]);
+        setIsInitialized(true);
+      } else {
+        const genesis = await createGenesisBlock();
+        setBlockchain([genesis]);
+        setIsInitialized(true);
+      }
+    } catch (error) {
+      console.error("Failed to load data from backend:", error);
+      // Fallback to genesis
+      const genesis = await createGenesisBlock();
+      setBlockchain([genesis]);
+    } finally {
+      setIsLoading(false);
     }
-  }, [blockchain]);
+  };
+
+  // Reload data when user changes (Hospital Switch)
+  useEffect(() => {
+    if (currentUser) {
+      loadDataFromBackend();
+    }
+  }, [currentUser]);
+
+  /* 
+    // Disable Legacy LocalStorage Loading
+    useEffect(() => {
+      const loadChain = async () => {
+        // ... 
+      };
+      loadChain();
+    }, []);
+  */
+
+  /*
+    // Persistence Effect
+    useEffect(() => {
+      if (blockchain.length > 0) {
+        localStorage.setItem('medchain_ledger', JSON.stringify(blockchain));
+      }
+    }, [blockchain]);
+  */
 
   const handleInitializeGenesis = async () => {
     setIsLoading(true);
@@ -105,24 +156,24 @@ const App: React.FC = () => {
   const handleAddRecord = async (data: MedicalRecordData) => {
     const latestBlock = blockchain[blockchain.length - 1];
     const newBlock = await createNewBlock(latestBlock, data);
-    
+
     const newChain = [...blockchain, newBlock];
     setBlockchain(newChain);
-    
+
     const isValid = await verifyChain(newChain);
     setIsChainValid(isValid);
-    
+
     // Navigation logic
     if (selectedPatient) {
-        setCurrentView(AppView.PATIENT_DETAIL);
+      setCurrentView(AppView.PATIENT_DETAIL);
     } else {
-        setSelectedPatient({ id: data.patientId, name: data.patientName });
-        setCurrentView(AppView.PATIENT_DETAIL);
+      setSelectedPatient({ id: data.patientId, name: data.patientName });
+      setCurrentView(AppView.PATIENT_DETAIL);
     }
   };
 
   const handleResetSystem = () => {
-    if(confirm("Are you sure you want to purge the blockchain node? All local data will be lost.")) {
+    if (confirm("Are you sure you want to purge the blockchain node? All local data will be lost.")) {
       localStorage.removeItem('medchain_ledger');
       setBlockchain([]);
       setIsInitialized(false);
@@ -132,8 +183,8 @@ const App: React.FC = () => {
   }
 
   const handlePatientSelect = (patientId: string) => {
-     setSelectedPatient({ id: patientId, name: '' }); 
-     setCurrentView(AppView.PATIENT_DETAIL);
+    setSelectedPatient({ id: patientId, name: '' });
+    setCurrentView(AppView.PATIENT_DETAIL);
   };
 
   const handleAddNewPatient = () => {
@@ -153,11 +204,10 @@ const App: React.FC = () => {
         setSelectedPatient(null);
         setIsSidebarOpen(false);
       }}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-        (currentView === view || (view === AppView.PATIENTS_LIST && currentView === AppView.PATIENT_DETAIL))
-          ? 'bg-medical-50 text-medical-600 font-semibold border-r-4 border-medical-600' 
-          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-      }`}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${(currentView === view || (view === AppView.PATIENTS_LIST && currentView === AppView.PATIENT_DETAIL))
+        ? 'bg-medical-50 text-medical-600 font-semibold border-r-4 border-medical-600'
+        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+        }`}
     >
       <Icon className="w-5 h-5" />
       <span>{label}</span>
@@ -181,12 +231,12 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-bold text-white mb-2">MedChain Node</h1>
             <p className="text-medical-100 text-sm">Decentralized Medical Record System</p>
           </div>
-          
+
           <div className="p-8">
             {isLoading ? (
               <div className="text-center space-y-4">
-                 <div className="w-12 h-12 border-4 border-medical-200 border-t-medical-600 rounded-full animate-spin mx-auto"></div>
-                 <p className="text-slate-600 font-medium">Synchronizing Ledger...</p>
+                <div className="w-12 h-12 border-4 border-medical-200 border-t-medical-600 rounded-full animate-spin mx-auto"></div>
+                <p className="text-slate-600 font-medium">Synchronizing Ledger...</p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -196,13 +246,13 @@ const App: React.FC = () => {
                   </h3>
                   <p className="text-sm text-slate-500">Node initialized. No active blockchain found in local storage.</p>
                 </div>
-                
+
                 <div className="space-y-2">
-                   <p className="text-center text-slate-600 text-sm">To begin, you must mint the <span className="font-bold text-slate-800">Genesis Block</span>.</p>
-                   <p className="text-center text-xs text-slate-400">This is the first immutable record in the chain.</p>
+                  <p className="text-center text-slate-600 text-sm">To begin, you must mint the <span className="font-bold text-slate-800">Genesis Block</span>.</p>
+                  <p className="text-center text-xs text-slate-400">This is the first immutable record in the chain.</p>
                 </div>
 
-                <button 
+                <button
                   onClick={handleInitializeGenesis}
                   className="w-full bg-gradient-to-r from-medical-600 to-medical-500 hover:from-medical-700 hover:to-medical-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
                 >
@@ -212,11 +262,11 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
-          
+
           <div className="bg-slate-50 px-8 py-4 border-t border-slate-100 text-center">
-             <p className="text-xs text-slate-400 flex items-center justify-center gap-1">
-               <ShieldCheck className="w-3 h-3" /> Protected by SHA-256 Encryption
-             </p>
+            <p className="text-xs text-slate-400 flex items-center justify-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> Protected by SHA-256 Encryption
+            </p>
           </div>
         </div>
       </div>
@@ -226,10 +276,10 @@ const App: React.FC = () => {
   // --- MAIN APP ---
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
-      
+
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
@@ -254,39 +304,43 @@ const App: React.FC = () => {
           </div>
 
           <div className="p-6 bg-slate-50 border-b border-slate-100">
-             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-medical-100 flex items-center justify-center text-medical-700 font-bold border border-medical-200">
-                    {currentUser.name.charAt(0)}
-                </div>
-                <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-800 truncate">{currentUser.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{currentUser.role}</p>
-                </div>
-             </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-medical-100 flex items-center justify-center text-medical-700 font-bold border border-medical-200">
+                {currentUser.name.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-slate-800 truncate">{currentUser.name}</p>
+                <p className="text-xs text-slate-500 truncate">{currentUser.role}</p>
+                <p className="text-xs text-emerald-600 font-bold truncate mt-1">
+                  {currentUser.hospitalId === 'RS-A' ? '🏥 Rumah Sakit A' : '🏥 Rumah Sakit B'}
+                </p>
+              </div>
+            </div>
           </div>
 
           <nav className="flex-1 p-4 space-y-2">
             <NavItem view={AppView.DASHBOARD} icon={LayoutDashboard} label="Dashboard" />
             <NavItem view={AppView.PATIENTS_LIST} icon={Users} label="Data Pasien" />
+            <NavItem view={AppView.ACCESS_REQUESTS} icon={ShieldCheck} label="Access Requests" />
             <NavItem view={AppView.ADD_RECORD} icon={PlusCircle} label="Tambah Rekam Medis" />
             <NavItem view={AppView.REPORTS} icon={ClipboardList} label="Laporan Rekam Medis" />
             <NavItem view={AppView.BLOCKCHAIN} icon={Database} label="Blockchain Ledger" />
           </nav>
 
           <div className="p-4 border-t border-slate-100 space-y-2">
-             <button 
-               onClick={handleResetSystem}
-               className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-             >
-               <Power className="w-3 h-3" /> Reset Node Data
-             </button>
+            <button
+              onClick={handleResetSystem}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <Power className="w-3 h-3" /> Reset Node Data
+            </button>
 
-             <button
-               onClick={handleLogout}
-               className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
-             >
-               <LogOut className="w-3 h-3" /> Logout
-             </button>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+            >
+              <LogOut className="w-3 h-3" /> Logout
+            </button>
           </div>
         </div>
       </aside>
@@ -296,7 +350,7 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="bg-white border-b border-slate-200 py-4 px-6 flex items-center justify-between print:hidden">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(true)}
               className="lg:hidden text-slate-500 hover:text-slate-700"
             >
@@ -311,23 +365,23 @@ const App: React.FC = () => {
               {currentView === AppView.REPORTS && 'Laporan & Statistik'}
             </h1>
           </div>
-          
-          <div className="flex items-center gap-4">
-             {/* Network Indicator */}
-             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-amber-50 rounded-full border border-amber-100 text-xs font-medium text-amber-700" title="Data stored locally in browser">
-               <Lock className="w-3 h-3" />
-               Private Local Node
-             </div>
-             
-             <div className="w-px h-6 bg-slate-200 hidden sm:block"></div>
 
-             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full text-xs font-medium text-slate-600">
-               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-               Node Active
-             </div>
-             <div className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded border border-indigo-100">
-               {currentUser.sip}
-             </div>
+          <div className="flex items-center gap-4">
+            {/* Network Indicator */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-amber-50 rounded-full border border-amber-100 text-xs font-medium text-amber-700" title="Data stored locally in browser">
+              <Lock className="w-3 h-3" />
+              Private Local Node
+            </div>
+
+            <div className="w-px h-6 bg-slate-200 hidden sm:block"></div>
+
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full text-xs font-medium text-slate-600">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              Node Active
+            </div>
+            <div className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded border border-indigo-100">
+              {currentUser.sip}
+            </div>
           </div>
         </header>
 
@@ -336,10 +390,14 @@ const App: React.FC = () => {
           {currentView === AppView.DASHBOARD && (
             <Dashboard chain={blockchain} />
           )}
-          
+
+          {currentView === AppView.ACCESS_REQUESTS && (
+            <AccessManager />
+          )}
+
           {currentView === AppView.ADD_RECORD && (
-            <RecordForm 
-              onAddRecord={handleAddRecord} 
+            <RecordForm
+              onAddRecord={handleAddRecord}
               initialData={selectedPatient ? { patientId: selectedPatient.id, patientName: selectedPatient.name } : null}
               doctorName={currentUser.name}
             />
@@ -350,16 +408,16 @@ const App: React.FC = () => {
           )}
 
           {currentView === AppView.PATIENTS_LIST && (
-            <PatientList 
-              chain={blockchain} 
+            <PatientList
+              chain={blockchain}
               onSelectPatient={handlePatientSelect}
               onAddNew={handleAddNewPatient}
             />
           )}
 
           {currentView === AppView.PATIENT_DETAIL && selectedPatient && (
-            <PatientDetail 
-              patientId={selectedPatient.id} 
+            <PatientDetail
+              patientId={selectedPatient.id}
               chain={blockchain}
               onBack={() => setCurrentView(AppView.PATIENTS_LIST)}
               onAddRecord={handleAddRecordForPatient}

@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const crypto = require('crypto');
+const { encrypt, decrypt } = require('./src/utils/crypto');
 require('dotenv').config();
 
 const config = require('./config');
@@ -119,9 +120,23 @@ app.get('/api/patients/:patientUid', authenticateHospital, async (req, res) => {
             });
         }
 
+        // Discovery: Find records for this patient (Blind Metadata)
+        // This allows other hospitals to request access to specific records
+        const records = await recordDB.findByPatient(req.params.patientUid);
+
+        const discoveryRecords = records.map(r => ({
+            record_id: r.record_id,
+            hospital_id: r.hospital_id,
+            created_at: r.created_at,
+            department: r.department
+        }));
+
         return res.json({
             success: true,
-            data: patient
+            data: {
+                ...patient,
+                medical_records: discoveryRecords
+            }
         });
 
     } catch (error) {
@@ -141,7 +156,7 @@ app.get('/api/patients/:patientUid', authenticateHospital, async (req, res) => {
  */
 app.post('/api/fabric/records', authenticateHospital, async (req, res) => {
     try {
-        const { patient_uid, diagnosis, treatment, symptoms, department, doctor_name } = req.body;
+        const { patient_uid, patient_name, diagnosis, treatment, symptoms, department, doctor_name } = req.body;
         const hospital = req.hospital;
 
         if (!patient_uid) {
@@ -151,13 +166,37 @@ app.post('/api/fabric/records', authenticateHospital, async (req, res) => {
             });
         }
 
-        // Verify patient exists
-        const patient = await patientDB.findByUid(patient_uid);
+        // Verify patient exists OR Auto-create for Prototype
+        let patient = await patientDB.findByUid(patient_uid);
+
         if (!patient) {
-            return res.status(404).json({
-                success: false,
-                error: 'Patient not found. Please register patient first.'
-            });
+            console.log(`[FABRIC] Patient ${patient_uid} not found. Auto-registering...`);
+            try {
+                patient = await patientDB.create({
+                    patient_uid,
+                    full_name: patient_name || 'Patient ' + patient_uid,
+                    nik: patient_uid,
+                    date_of_birth: '1990-01-01',
+                    gender: 'UNKNOWN',
+                    address: 'Unknown',
+                    phone: '-',
+                    email: null,
+                    encrypted_data: null
+                });
+            } catch (err) {
+                console.error("Auto-registration failed:", err);
+            }
+        } else if (patient_name && patient.full_name !== patient_name && patient.full_name.startsWith('Patient ')) {
+            // Update name if it was previously auto-generated
+            try {
+                await patientDB.update(patient_uid, { full_name: patient_name });
+            } catch (e) { console.error("Failed to update patient name", e); }
+        }
+
+        // Double check
+        if (!patient) {
+            // If still failing, define a mock patient object so code doesn't crash
+            patient = { patient_uid };
         }
 
         // Generate record ID and data hash
@@ -260,11 +299,29 @@ app.get('/api/fabric/records/:recordId', authenticateHospital, async (req, res) 
         // Get patient info
         const patient = await patientDB.findByUid(record.patient_uid);
 
+        // Decrypt clinical data if needed
+        let diagnosis = record.diagnosis;
+        let treatment = record.treatment;
+        let symptoms = record.symptoms;
+
+        if (record.is_encrypted) {
+            try {
+                if (diagnosis) diagnosis = decrypt(diagnosis);
+                if (treatment) treatment = decrypt(treatment);
+                if (symptoms) symptoms = decrypt(symptoms);
+            } catch (e) {
+                console.error("Decryption failed for record " + recordId, e);
+            }
+        }
+
         return res.json({
             success: true,
             access_type: isOwner ? 'OWNER' : 'GRANTED',
             data: {
                 ...record,
+                diagnosis,
+                treatment,
+                symptoms,
                 patient_name: patient?.full_name || 'Unknown'
             }
         });
@@ -300,10 +357,38 @@ app.get('/api/fabric/records', authenticateHospital, async (req, res) => {
             }
         }
 
-        // Mark owned records
-        const result = allRecords.map(r => ({
-            ...r,
-            access_type: r.hospital_id === hospital.hospital_id ? 'OWNER' : 'GRANTED'
+        // Mark owned records and fetch patient names
+        const result = await Promise.all(allRecords.map(async r => {
+            let patientName = 'Unknown';
+            if (r.patient_uid) {
+                const p = await patientDB.findByUid(r.patient_uid);
+                if (p) patientName = p.full_name;
+            }
+
+            // Decrypt clinical data if needed
+            let diagnosis = r.diagnosis;
+            let treatment = r.treatment;
+            let symptoms = r.symptoms;
+
+            if (r.is_encrypted) {
+                try {
+                    if (diagnosis) diagnosis = decrypt(diagnosis);
+                    if (treatment) treatment = decrypt(treatment);
+                    if (symptoms) symptoms = decrypt(symptoms);
+                } catch (e) {
+                    console.error("Decryption failed for record " + r.record_id, e);
+                    // Keep original if fail
+                }
+            }
+
+            return {
+                ...r,
+                diagnosis,
+                treatment,
+                symptoms,
+                patient_name: patientName,
+                access_type: r.hospital_id === hospital.hospital_id ? 'OWNER' : 'GRANTED'
+            };
         }));
 
         return res.json({

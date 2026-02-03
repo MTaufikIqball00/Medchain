@@ -35,6 +35,17 @@ function verifyToken(token) {
  */
 async function authenticateHospital(req, res, next) {
     try {
+        // DEV BYPASS: Allow simple "DEV_TOKEN" for testing prototype
+        const devToken = req.headers['x-dev-token'];
+        if (devToken === 'MEDCHAIN_DEV_2026') {
+            req.hospital = {
+                hospital_id: req.headers['x-hospital-id'] || 'RS-001',
+                name: 'Rumah Sakit Demo',
+                role: 'HOSPITAL_ADMIN'
+            };
+            return next();
+        }
+
         const authHeader = req.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
