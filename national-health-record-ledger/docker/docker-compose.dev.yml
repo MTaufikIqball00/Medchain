@@ -1,0 +1,40 @@
+version: '3.8'
+
+# Simplified Docker Compose for development/testing
+# Only PostgreSQL and Ganache - Fabric can run separately or in mock mode
+
+services:
+  # ===== POSTGRESQL DATABASE =====
+  postgres:
+    image: postgres:15-alpine
+    container_name: medchain-postgres
+    environment:
+      POSTGRES_USER: medchain
+      POSTGRES_PASSWORD: medchain123
+      POSTGRES_DB: medicalchain
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medchain -d medicalchain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===== ETHEREUM (GANACHE) =====
+  ganache:
+    image: trufflesuite/ganache:latest
+    container_name: medchain-ganache
+    ports:
+      - "8545:8545"
+    command: >
+      --deterministic
+      --networkId 5777
+      --accounts 10
+      --defaultBalanceEther 100
+      --host 0.0.0.0
+      --verbose
+
+volumes:
+  postgres_data:

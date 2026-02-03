@@ -1,159 +1,393 @@
 {
   "info": {
-    "_postman_id": "medchain-fabric-api-collection",
-    "name": "MedChain - Hyperledger Fabric API",
-    "description": "Complete API collection for testing MedChain Hyperledger Fabric Medical Records System",
+    "name": "MedicalChain API v2.0",
+    "description": "National Health Record Ledger - API Collection with Hospital Authentication and Cross-Hospital Access",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "item": [
-    {
-      "name": "1. Health Check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/health",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "health"]
-        },
-        "description": "Check if Fabric API is running and get status"
-      },
-      "response": []
-    },
-    {
-      "name": "2. Create Record (NEW TRANSACTION)",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"patientName\": \"Ahmad Rizki\",\n  \"patientId\": \"P001\",\n  \"diagnosis\": \"Flu Biasa\",\n  \"treatment\": \"Istirahat dan minum air putih\",\n  \"symptoms\": \"Demam 38 derajat, batuk\",\n  \"department\": \"Poli Umum\",\n  \"doctorName\": \"Dr. Budi\",\n  \"dataHash\": \"abc123def456\",\n  \"isEncrypted\": true\n}"
-        },
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/records",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "records"]
-        },
-        "description": "Create new medical record and generate Fabric transaction ID"
-      },
-      "response": []
-    },
-    {
-      "name": "3. Get All Records",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/records",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "records"]
-        },
-        "description": "Retrieve all medical records from Hyperledger Fabric"
-      },
-      "response": []
-    },
-    {
-      "name": "4. Get Specific Record",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/records/REC-1705762520000-456",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "records", "REC-1705762520000-456"]
-        },
-        "description": "Get specific record by recordId. Replace REC-1705762520000-456 with actual recordId from Create Record response"
-      },
-      "response": []
-    },
-    {
-      "name": "5. Get Transaction History BY TX ID",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/records/FABRIC_TX_ID_1705762520000/history",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "records", "FABRIC_TX_ID_1705762520000", "history"]
-        },
-        "description": "Get transaction history and Fabric block details. Replace FABRIC_TX_ID_1705762520000 with actual transactionId from Create Record response.\n\n⭐ THIS IS HOW TO CHECK FABRIC TX BLOCK!"
-      },
-      "response": []
-    },
-    {
-      "name": "6. Update Record",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"diagnosis\": \"Flu Berat - Kondisi Memburuk\",\n  \"treatment\": \"Antibiotik + Istirahat 5 hari\",\n  \"dataHash\": \"xyz789abc123\"\n}"
-        },
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/records/REC-1705762520000-456",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "records", "REC-1705762520000-456"]
-        },
-        "description": "Update existing record. Creates new transaction ID. Replace recordId with actual value."
-      },
-      "response": []
-    },
-    {
-      "name": "7. Delete Record",
-      "request": {
-        "method": "DELETE",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:4000/api/fabric/records/REC-1705762520000-456",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "4000",
-          "path": ["api", "fabric", "records", "REC-1705762520000-456"]
-        },
-        "description": "Delete (soft delete) record. Replace recordId with actual value."
-      },
-      "response": []
-    }
-  ],
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:4000",
-      "type": "string"
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "tokenA",
+      "value": ""
+    },
+    {
+      "key": "tokenB",
+      "value": ""
+    },
+    {
+      "key": "patientUid",
+      "value": ""
     },
     {
       "key": "recordId",
-      "value": "REC-1705762520000-456",
-      "type": "string"
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Setup",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/fabric/health"
+          }
+        },
+        {
+          "name": "Register Hospital A",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/hospitals/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospital_id\": \"RS-A\",\n  \"name\": \"Rumah Sakit A\",\n  \"password\": \"password123\",\n  \"eth_address\": \"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Register Hospital B",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/hospitals/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospital_id\": \"RS-B\",\n  \"name\": \"Rumah Sakit B\",\n  \"password\": \"password123\",\n  \"eth_address\": \"0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login Hospital A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('tokenA', jsonData.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/hospitals/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospital_id\": \"RS-A\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login Hospital B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('tokenB', jsonData.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/hospitals/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hospital_id\": \"RS-B\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        }
+      ]
     },
     {
-      "key": "fabricTxId",
-      "value": "FABRIC_TX_ID_1705762520000",
-      "type": "string"
+      "name": "2. Hospital A - Create Patient & Record",
+      "item": [
+        {
+          "name": "[RS-A] Create Patient Jane Doe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.patient_uid) {",
+                  "    pm.collectionVariables.set('patientUid', jsonData.data.patient_uid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/patients",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Jane Doe\",\n  \"nik\": \"3201012345678901\",\n  \"date_of_birth\": \"1990-05-15\",\n  \"gender\": \"Female\",\n  \"address\": \"Jl. Merdeka No. 123, Jakarta\",\n  \"phone\": \"081234567890\",\n  \"email\": \"jane.doe@email.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[RS-A] Create Medical Record for Jane Doe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.record_id) {",
+                  "    pm.collectionVariables.set('recordId', jsonData.data.record_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/fabric/records",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_uid\": \"{{patientUid}}\",\n  \"diagnosis\": \"Common Cold\",\n  \"treatment\": \"Rest, fluids, paracetamol\",\n  \"symptoms\": \"Fever, cough, runny nose\",\n  \"department\": \"General\",\n  \"doctor_name\": \"Dr. Ahmad\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[RS-A] List My Records",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/fabric/records",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Hospital B - Try to Access (DENIED)",
+      "item": [
+        {
+          "name": "[RS-B] Try Get Record (Should FAIL)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/fabric/records/{{recordId}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "[RS-B] Check Access Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/access/check/{{recordId}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Access Request Flow",
+      "item": [
+        {
+          "name": "[RS-B] Request Access to Record",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/access/request",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"record_id\": \"{{recordId}}\",\n  \"reason\": \"Patient referred to our hospital for follow-up treatment\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[RS-A] View Pending Requests",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/access/pending",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "[RS-A] Grant Access to RS-B",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/access/grant",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"record_id\": \"{{recordId}}\",\n  \"requester_hospital_id\": \"RS-B\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Hospital B - Access Granted",
+      "item": [
+        {
+          "name": "[RS-B] Check Access Status (Now GRANTED)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/access/check/{{recordId}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "[RS-B] Get Record (Should SUCCEED)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/fabric/records/{{recordId}}",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "[RS-B] List Accessible Records",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/fabric/records",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Verification",
+      "item": [
+        {
+          "name": "Get Transaction History",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/fabric/records/{{recordId}}/history",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Verify Data Integrity",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/verify/integrity",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"record_id\": \"{{recordId}}\",\n  \"data_hash\": \"<paste_hash_from_record>\"\n}"
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -1,9 +1,13 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
+
 const config = require('./config');
 const { v4: uuidv4 } = require('uuid');
+const { initializeDatabase, patientDB, recordDB, accessPermissionDB } = require('./src/services/database');
+const { authenticateHospital, optionalAuth } = require('./src/middleware/hospitalAuth');
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -11,282 +15,587 @@ const port = process.env.PORT || 4000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Add request logging middleware
+// Request logging middleware
 app.use((req, res, next) => {
-    console.log(`[API] ${req.method} ${req.path}`);
+    console.log(`[API] ${new Date().toISOString()} ${req.method} ${req.path}`);
     next();
 });
 
-// Load Fabric Service based on config
+// Load services based on config
 let fabricService;
+let ethService;
+
 if (config.BLOCKCHAIN_MODE === 'REAL') {
-    console.log("!!! RUNNING IN REAL HYPERLEDGER FABRIC MODE !!!");
+    console.log("!!! RUNNING IN REAL BLOCKCHAIN MODE !!!");
     fabricService = require('./src/services/realFabric');
+    ethService = require('./src/services/realEthereum');
 } else {
-    console.log("--- RUNNING IN MOCK SIMULATION MODE (FABRIC) ---");
+    console.log("--- RUNNING IN MOCK SIMULATION MODE ---");
     fabricService = require('./src/services/mockFabric');
+    ethService = {
+        anchorHash: async () => `MOCK_ETH_TX_${Date.now()}`,
+        verifyIntegrity: async () => true,
+        hasAccess: async () => true
+    };
 }
 
-// In-memory record storage
-const recordsDB = {};
+// Import controllers
+const hospitalRoutes = require('./src/controllers/hospitalController');
+const accessRoutes = require('./src/controllers/accessController');
 
-// Routes
-const patientRoutes = require('./src/controllers/patientController');
-const recordRoutes = require('./src/controllers/recordController');
+// Mount routes
+app.use('/api/hospitals', hospitalRoutes);
+app.use('/api/access', accessRoutes);
 
-app.use('/api/patients', patientRoutes);
-app.use('/api/records', recordRoutes);
+// Utility function to generate data hash
+function generateDataHash(data) {
+    return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
+}
 
-// ===== FABRIC API ROUTES =====
+// ===== PATIENT ENDPOINTS =====
+
+/**
+ * POST /api/patients
+ * Create/register a new patient (off-chain PII storage)
+ */
+app.post('/api/patients', authenticateHospital, async (req, res) => {
+    try {
+        const { full_name, nik, date_of_birth, gender, address, phone, email } = req.body;
+
+        if (!full_name) {
+            return res.status(400).json({
+                success: false,
+                error: 'full_name is required'
+            });
+        }
+
+        // Generate pseudonymized patient UID
+        const patient_uid = `PAT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+        const patient = await patientDB.create({
+            patient_uid,
+            full_name,
+            nik,
+            date_of_birth,
+            gender,
+            address,
+            phone,
+            email,
+            encrypted_data: null // Would encrypt sensitive data in production
+        });
+
+        console.log(`[PATIENT] ✅ Created: ${patient_uid} by ${req.hospital.hospital_id}`);
+
+        return res.status(201).json({
+            success: true,
+            data: {
+                patient_uid: patient.patient_uid,
+                full_name: patient.full_name,
+                created_at: patient.created_at
+            }
+        });
+
+    } catch (error) {
+        console.error('[PATIENT] Create error:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create patient'
+        });
+    }
+});
+
+/**
+ * GET /api/patients/:patientUid
+ * Get patient by UID (requires auth)
+ */
+app.get('/api/patients/:patientUid', authenticateHospital, async (req, res) => {
+    try {
+        const patient = await patientDB.findByUid(req.params.patientUid);
+
+        if (!patient) {
+            return res.status(404).json({
+                success: false,
+                error: 'Patient not found'
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: patient
+        });
+
+    } catch (error) {
+        console.error('[PATIENT] Get error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to get patient'
+        });
+    }
+});
+
+// ===== MEDICAL RECORD ENDPOINTS =====
 
 /**
  * POST /api/fabric/records
  * Create new medical record
  */
-app.post('/api/fabric/records', async (req, res) => {
+app.post('/api/fabric/records', authenticateHospital, async (req, res) => {
     try {
-        console.log("[FABRIC] Creating record...", req.body);
-        const { recordId, patientName, patientId, diagnosis, treatment, symptoms, department, doctorName, dataHash, isEncrypted } = req.body;
+        const { patient_uid, diagnosis, treatment, symptoms, department, doctor_name } = req.body;
+        const hospital = req.hospital;
 
-        // Validate required fields
-        if (!patientId || !patientName) {
+        if (!patient_uid) {
             return res.status(400).json({
                 success: false,
-                error: "patientId and patientName are required"
+                error: 'patient_uid is required'
             });
         }
 
-        const id = recordId || `REC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        // Verify patient exists
+        const patient = await patientDB.findByUid(patient_uid);
+        if (!patient) {
+            return res.status(404).json({
+                success: false,
+                error: 'Patient not found. Please register patient first.'
+            });
+        }
 
-        recordsDB[id] = {
-            recordId: id,
-            patientName,
-            patientId,
+        // Generate record ID and data hash
+        const record_id = `REC-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+        const recordData = { patient_uid, diagnosis, treatment, symptoms, department, doctor_name, timestamp: Date.now() };
+        const data_hash = generateDataHash(recordData);
+
+        // Submit to Fabric
+        console.log(`[FABRIC] Submitting record: ${record_id}`);
+        const fabricTxId = await fabricService.submitTransaction('CreateRecord', record_id, patient_uid, hospital.hospital_id, data_hash);
+
+        // Anchor hash to Ethereum
+        let ethTxHash = null;
+        if (config.BLOCKCHAIN_MODE === 'REAL') {
+            try {
+                ethTxHash = await ethService.anchorHash(fabricTxId, data_hash, hospital.hospital_id);
+            } catch (ethError) {
+                console.error('[ETHEREUM] Anchor error (continuing):', ethError.message);
+            }
+        } else {
+            ethTxHash = `MOCK_ETH_TX_${Date.now()}`;
+        }
+
+        // Save to PostgreSQL
+        const record = await recordDB.create({
+            record_id,
+            patient_uid,
+            hospital_id: hospital.hospital_id,
+            fabric_tx_id: fabricTxId,
+            eth_tx_hash: ethTxHash,
             diagnosis,
             treatment,
             symptoms,
             department,
-            doctorName,
-            dataHash,
-            isEncrypted: isEncrypted || false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            version: 1
-        };
+            doctor_name,
+            data_hash,
+            is_encrypted: false
+        });
 
-        console.log(`[FABRIC] Submitting to Fabric: ${id}`);
-        const transactionId = await fabricService.submitTransaction('CreateRecord', id, patientId, patientName, dataHash);
+        // Grant owner access
+        await accessPermissionDB.grant({
+            record_id,
+            hospital_id: hospital.hospital_id,
+            granted_by: hospital.hospital_id
+        });
 
-        console.log(`[FABRIC] ✅ Record created: ${id}, TX: ${transactionId}`);
+        console.log(`[FABRIC] ✅ Record created: ${record_id}, Fabric TX: ${fabricTxId}, ETH TX: ${ethTxHash}`);
 
-        return res.json({
+        return res.status(201).json({
             success: true,
             data: {
-                recordId: id,
-                transactionId: transactionId,
-                timestamp: Date.now()
+                record_id: record.record_id,
+                patient_uid: record.patient_uid,
+                fabric_tx_id: fabricTxId,
+                eth_tx_hash: ethTxHash,
+                data_hash: data_hash,
+                created_at: record.created_at
             }
         });
 
     } catch (error) {
-        console.error("[FABRIC] ❌ Error creating record:", error);
+        console.error('[FABRIC] Create error:', error);
         return res.status(500).json({
             success: false,
-            error: error.message || "Failed to create record"
+            error: error.message || 'Failed to create record'
         });
     }
 });
 
 /**
  * GET /api/fabric/records/:recordId
- * Get specific record
+ * Get specific record (with access control)
  */
-app.get('/api/fabric/records/:recordId', async (req, res) => {
+app.get('/api/fabric/records/:recordId', authenticateHospital, async (req, res) => {
     try {
         const { recordId } = req.params;
-        const record = recordsDB[recordId];
+        const hospital = req.hospital;
 
+        const record = await recordDB.findById(recordId);
         if (!record) {
             return res.status(404).json({
                 success: false,
-                error: "Record not found"
+                error: 'Record not found'
             });
         }
 
+        // Check access: owner or has permission
+        const isOwner = record.hospital_id === hospital.hospital_id;
+        const hasPermission = await accessPermissionDB.hasAccess(recordId, hospital.hospital_id);
+
+        if (!isOwner && !hasPermission) {
+            return res.status(403).json({
+                success: false,
+                error: 'Access denied. You do not have permission to view this record.',
+                owner_hospital: record.hospital_id,
+                hint: 'Use POST /api/access/request to request access from the owner hospital'
+            });
+        }
+
+        // Get patient info
+        const patient = await patientDB.findByUid(record.patient_uid);
+
         return res.json({
             success: true,
-            data: record
+            access_type: isOwner ? 'OWNER' : 'GRANTED',
+            data: {
+                ...record,
+                patient_name: patient?.full_name || 'Unknown'
+            }
         });
 
     } catch (error) {
-        console.error("[FABRIC] Error querying record:", error);
+        console.error('[FABRIC] Get error:', error);
         return res.status(500).json({
             success: false,
-            error: error.message || "Failed to query record"
+            error: 'Failed to get record'
         });
     }
 });
 
 /**
  * GET /api/fabric/records
- * Get all records
+ * Get all records accessible to current hospital
  */
-app.get('/api/fabric/records', async (req, res) => {
+app.get('/api/fabric/records', authenticateHospital, async (req, res) => {
     try {
-        const records = Object.values(recordsDB);
+        const hospital = req.hospital;
+
+        // Get owned records
+        const ownedRecords = await recordDB.findByHospital(hospital.hospital_id);
+
+        // Get records with granted access
+        const grantedRecords = await accessPermissionDB.getAccessibleRecords(hospital.hospital_id);
+
+        // Combine and deduplicate
+        const allRecords = [...ownedRecords];
+        for (const record of grantedRecords) {
+            if (!allRecords.find(r => r.record_id === record.record_id)) {
+                allRecords.push({ ...record, access_type: 'GRANTED' });
+            }
+        }
+
+        // Mark owned records
+        const result = allRecords.map(r => ({
+            ...r,
+            access_type: r.hospital_id === hospital.hospital_id ? 'OWNER' : 'GRANTED'
+        }));
 
         return res.json({
             success: true,
-            data: records
+            count: result.length,
+            data: result
         });
 
     } catch (error) {
-        console.error("[FABRIC] Error fetching records:", error);
+        console.error('[FABRIC] List error:', error);
         return res.status(500).json({
             success: false,
-            error: error.message || "Failed to fetch records"
+            error: 'Failed to list records'
+        });
+    }
+});
+
+/**
+ * GET /api/fabric/records/patient/:patientUid
+ * Get all records for a patient (respecting access control)
+ */
+app.get('/api/fabric/records/patient/:patientUid', authenticateHospital, async (req, res) => {
+    try {
+        const { patientUid } = req.params;
+        const hospital = req.hospital;
+
+        const allRecords = await recordDB.findByPatient(patientUid);
+
+        // Filter by access
+        const accessibleRecords = [];
+        for (const record of allRecords) {
+            const isOwner = record.hospital_id === hospital.hospital_id;
+            const hasPermission = await accessPermissionDB.hasAccess(record.record_id, hospital.hospital_id);
+
+            if (isOwner || hasPermission) {
+                accessibleRecords.push({
+                    ...record,
+                    access_type: isOwner ? 'OWNER' : 'GRANTED'
+                });
+            }
+        }
+
+        return res.json({
+            success: true,
+            patient_uid: patientUid,
+            total_records: allRecords.length,
+            accessible_records: accessibleRecords.length,
+            data: accessibleRecords
+        });
+
+    } catch (error) {
+        console.error('[FABRIC] Patient records error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to get patient records'
         });
     }
 });
 
 /**
  * GET /api/fabric/records/:recordId/history
- * Get transaction history for a record (by recordId OR fabricTxId)
+ * Get transaction history for a record
  */
-app.get('/api/fabric/records/:recordId/history', async (req, res) => {
+app.get('/api/fabric/records/:recordId/history', authenticateHospital, async (req, res) => {
     try {
         const { recordId } = req.params;
-        
-        // Try to find record by recordId or fabricTxId
-        let record = recordsDB[recordId];
-        
-        if (!record) {
-            // Try to find by fabricTxId
-            record = Object.values(recordsDB).find(r => r.transactionId === recordId || r.fabricTxId === recordId);
-        }
 
+        const record = await recordDB.findById(recordId);
         if (!record) {
-            // If still not found, return mock history for the TX ID
-            return res.json({
-                success: true,
-                data: [{
-                    transactionId: recordId,
-                    functionName: 'CreateRecord',
-                    timestamp: Date.now(),
-                    status: 'COMMITTED'
-                }]
+            return res.status(404).json({
+                success: false,
+                error: 'Record not found'
             });
         }
 
-        const history = await fabricService.getTransactionHistory(recordId);
+        // Get Fabric transaction history
+        let fabricHistory = [];
+        if (config.BLOCKCHAIN_MODE === 'REAL' && fabricService.getTransactionHistory) {
+            fabricHistory = await fabricService.getTransactionHistory(recordId);
+        }
+
+        // Get Ethereum proof
+        let ethProof = null;
+        if (config.BLOCKCHAIN_MODE === 'REAL' && ethService.getProof) {
+            ethProof = await ethService.getProof(record.fabric_tx_id);
+        }
 
         return res.json({
             success: true,
-            data: history || [{
-                transactionId: record.transactionId || record.fabricTxId,
-                functionName: 'CreateRecord',
-                timestamp: record.createdAt ? new Date(record.createdAt).getTime() : Date.now(),
-                status: 'COMMITTED'
-            }]
+            data: {
+                record_id: recordId,
+                fabric_tx_id: record.fabric_tx_id,
+                eth_tx_hash: record.eth_tx_hash,
+                fabric_history: fabricHistory.length > 0 ? fabricHistory : [{
+                    transaction_id: record.fabric_tx_id,
+                    function: 'CreateRecord',
+                    timestamp: record.created_at,
+                    status: 'COMMITTED'
+                }],
+                ethereum_proof: ethProof || {
+                    anchored: !!record.eth_tx_hash,
+                    tx_hash: record.eth_tx_hash
+                }
+            }
         });
 
     } catch (error) {
-        console.error("[FABRIC] Error fetching transaction history:", error);
-        return res.json({
-            success: true,
-            data: []
+        console.error('[FABRIC] History error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to get transaction history'
         });
     }
 });
 
 /**
  * PUT /api/fabric/records/:recordId
- * Update medical record
+ * Update a medical record (owner only)
  */
-app.put('/api/fabric/records/:recordId', async (req, res) => {
+app.put('/api/fabric/records/:recordId', authenticateHospital, async (req, res) => {
     try {
         const { recordId } = req.params;
-        const { diagnosis, treatment, symptoms, department, doctorName, dataHash } = req.body;
+        const { diagnosis, treatment, symptoms, department, doctor_name } = req.body;
+        const hospital = req.hospital;
 
-        const record = recordsDB[recordId];
+        const record = await recordDB.findById(recordId);
         if (!record) {
             return res.status(404).json({
                 success: false,
-                error: "Record not found"
+                error: 'Record not found'
             });
         }
 
-        record.diagnosis = diagnosis || record.diagnosis;
-        record.treatment = treatment || record.treatment;
-        record.symptoms = symptoms || record.symptoms;
-        record.department = department || record.department;
-        record.doctorName = doctorName || record.doctorName;
-        record.dataHash = dataHash || record.dataHash;
-        record.updatedAt = new Date().toISOString();
-        record.version = (record.version || 1) + 1;
+        if (record.hospital_id !== hospital.hospital_id) {
+            return res.status(403).json({
+                success: false,
+                error: 'Only the record owner can update this record'
+            });
+        }
 
-        const transactionId = await fabricService.submitTransaction('UpdateRecord', recordId, record.patientId, record.patientName, dataHash);
+        // Generate new data hash
+        const newData = {
+            ...record,
+            diagnosis: diagnosis || record.diagnosis,
+            treatment: treatment || record.treatment,
+            symptoms: symptoms || record.symptoms,
+            department: department || record.department,
+            doctor_name: doctor_name || record.doctor_name,
+            updated_at: Date.now()
+        };
+        const new_data_hash = generateDataHash(newData);
 
-        console.log(`[FABRIC] ✅ Record updated: ${recordId}, TX: ${transactionId}`);
+        // Submit to Fabric
+        const fabricTxId = await fabricService.submitTransaction('UpdateRecord', recordId, record.patient_uid, hospital.hospital_id, new_data_hash);
+
+        // Update in database
+        const updated = await recordDB.update(recordId, {
+            diagnosis: diagnosis || record.diagnosis,
+            treatment: treatment || record.treatment,
+            symptoms: symptoms || record.symptoms,
+            department: department || record.department,
+            doctor_name: doctor_name || record.doctor_name,
+            data_hash: new_data_hash,
+            fabric_tx_id: fabricTxId
+        });
+
+        console.log(`[FABRIC] ✅ Record updated: ${recordId}, TX: ${fabricTxId}`);
 
         return res.json({
             success: true,
             data: {
-                recordId,
-                transactionId,
-                timestamp: Date.now()
+                record_id: updated.record_id,
+                fabric_tx_id: fabricTxId,
+                version: updated.version,
+                updated_at: updated.updated_at
             }
         });
 
     } catch (error) {
-        console.error("[FABRIC] Error updating record:", error);
+        console.error('[FABRIC] Update error:', error);
         return res.status(500).json({
             success: false,
-            error: error.message || "Failed to update record"
+            error: 'Failed to update record'
         });
     }
 });
 
 /**
  * DELETE /api/fabric/records/:recordId
- * Delete medical record
+ * Soft delete a record (owner only)
  */
-app.delete('/api/fabric/records/:recordId', async (req, res) => {
+app.delete('/api/fabric/records/:recordId', authenticateHospital, async (req, res) => {
     try {
         const { recordId } = req.params;
-        const record = recordsDB[recordId];
+        const hospital = req.hospital;
 
+        const record = await recordDB.findById(recordId);
         if (!record) {
             return res.status(404).json({
                 success: false,
-                error: "Record not found"
+                error: 'Record not found'
             });
         }
 
-        record.isDeleted = true;
-        record.updatedAt = new Date().toISOString();
+        if (record.hospital_id !== hospital.hospital_id) {
+            return res.status(403).json({
+                success: false,
+                error: 'Only the record owner can delete this record'
+            });
+        }
 
-        const transactionId = await fabricService.submitTransaction('DeleteRecord', recordId);
+        // Submit to Fabric
+        const fabricTxId = await fabricService.submitTransaction('DeleteRecord', recordId);
 
-        console.log(`[FABRIC] ✅ Record deleted: ${recordId}, TX: ${transactionId}`);
+        // Soft delete in database
+        await recordDB.softDelete(recordId);
+
+        console.log(`[FABRIC] ✅ Record deleted: ${recordId}, TX: ${fabricTxId}`);
 
         return res.json({
             success: true,
             data: {
-                recordId,
-                transactionId,
-                timestamp: Date.now()
+                record_id: recordId,
+                fabric_tx_id: fabricTxId,
+                deleted_at: new Date().toISOString()
             }
         });
 
     } catch (error) {
-        console.error("[FABRIC] Error deleting record:", error);
+        console.error('[FABRIC] Delete error:', error);
         return res.status(500).json({
             success: false,
-            error: error.message || "Failed to delete record"
+            error: 'Failed to delete record'
         });
     }
 });
+
+// ===== VERIFICATION ENDPOINTS =====
+
+/**
+ * POST /api/verify/integrity
+ * Verify data integrity using Ethereum anchor
+ */
+app.post('/api/verify/integrity', async (req, res) => {
+    try {
+        const { record_id, data_hash } = req.body;
+
+        if (!record_id || !data_hash) {
+            return res.status(400).json({
+                success: false,
+                error: 'record_id and data_hash are required'
+            });
+        }
+
+        const record = await recordDB.findById(record_id);
+        if (!record) {
+            return res.status(404).json({
+                success: false,
+                error: 'Record not found'
+            });
+        }
+
+        // Verify against Ethereum
+        let ethVerified = false;
+        if (config.BLOCKCHAIN_MODE === 'REAL') {
+            ethVerified = await ethService.verifyIntegrity(record.fabric_tx_id, data_hash);
+        } else {
+            ethVerified = record.data_hash === data_hash;
+        }
+
+        return res.json({
+            success: true,
+            data: {
+                record_id,
+                is_valid: ethVerified,
+                stored_hash: record.data_hash,
+                provided_hash: data_hash,
+                fabric_tx_id: record.fabric_tx_id,
+                eth_tx_hash: record.eth_tx_hash
+            }
+        });
+
+    } catch (error) {
+        console.error('[VERIFY] Integrity error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to verify integrity'
+        });
+    }
+});
+
+// ===== HEALTH & INFO ENDPOINTS =====
 
 /**
  * GET /api/fabric/health
@@ -294,17 +603,22 @@ app.delete('/api/fabric/records/:recordId', async (req, res) => {
  */
 app.get('/api/fabric/health', async (req, res) => {
     try {
+        const allRecords = await recordDB.getAll();
+
         return res.json({
             success: true,
-            status: "Fabric API is running",
+            status: 'API Gateway is running',
             mode: config.BLOCKCHAIN_MODE,
-            recordCount: Object.keys(recordsDB).length,
+            database: 'PostgreSQL',
+            record_count: allRecords.length,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            error: "Health check failed"
+        return res.json({
+            success: true,
+            status: 'API Gateway is running (DB connection pending)',
+            mode: config.BLOCKCHAIN_MODE,
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -313,26 +627,55 @@ app.get('/api/fabric/health', async (req, res) => {
  * Root endpoint
  */
 app.get('/', (req, res) => {
-    res.send('National Health Record Ledger Gateway is Running on port ' + port);
-});
-
-// 404 handler
-app.use((req, res) => {
-    console.log(`[API] ❌ 404 Not Found: ${req.method} ${req.path}`);
-    res.status(404).json({
-        success: false,
-        error: `Cannot ${req.method} ${req.path}`,
-        available: {
-            posts: '/api/fabric/records',
-            gets: '/api/fabric/records, /api/fabric/records/:id, /api/fabric/records/:id/history, /api/fabric/health',
-            puts: '/api/fabric/records/:id',
-            deletes: '/api/fabric/records/:id'
+    res.json({
+        name: 'National Health Record Ledger Gateway',
+        version: '2.0.0',
+        mode: config.BLOCKCHAIN_MODE,
+        endpoints: {
+            hospitals: '/api/hospitals',
+            records: '/api/fabric/records',
+            access: '/api/access',
+            patients: '/api/patients',
+            verify: '/api/verify/integrity',
+            health: '/api/fabric/health'
         }
     });
 });
 
-app.listen(port, () => {
-    console.log(`\n✅ API Gateway listening at http://localhost:${port}`);
-    console.log(`📍 Fabric API endpoints: /api/fabric/*`);
-    console.log(`🔧 Mode: ${config.BLOCKCHAIN_MODE}\n`);
+// 404 handler
+app.use((req, res) => {
+    console.log(`[API] ❌ 404: ${req.method} ${req.path}`);
+    res.status(404).json({
+        success: false,
+        error: `Cannot ${req.method} ${req.path}`
+    });
 });
+
+// Initialize database and start server
+async function startServer() {
+    try {
+        console.log('\n🔄 Initializing database...');
+        await initializeDatabase();
+
+        app.listen(port, () => {
+            console.log(`\n✅ API Gateway listening at http://localhost:${port}`);
+            console.log(`📍 Mode: ${config.BLOCKCHAIN_MODE}`);
+            console.log(`📍 Database: PostgreSQL`);
+            console.log(`\n📋 Available endpoints:`);
+            console.log(`   POST   /api/hospitals/register`);
+            console.log(`   POST   /api/hospitals/login`);
+            console.log(`   POST   /api/patients`);
+            console.log(`   POST   /api/fabric/records`);
+            console.log(`   GET    /api/fabric/records`);
+            console.log(`   GET    /api/fabric/records/:id`);
+            console.log(`   POST   /api/access/request`);
+            console.log(`   POST   /api/access/grant`);
+            console.log(`   GET    /api/fabric/health\n`);
+        });
+    } catch (error) {
+        console.error('❌ Failed to start server:', error);
+        process.exit(1);
+    }
+}
+
+startServer();
