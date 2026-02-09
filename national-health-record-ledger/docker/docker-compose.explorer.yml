@@ -1,0 +1,78 @@
+version: '3.8'
+
+# ============================================================
+# Hyperledger Explorer for MedicalChain
+# Use this file to start Explorer UI for viewing Fabric ledger
+# 
+# Usage:
+#   cd docker
+#   docker-compose -f docker-compose.explorer.yml up -d
+#
+# Access: http://localhost:8080
+# Login: exploreradmin / exploreradminpw
+# ============================================================
+
+services:
+  # ===== EXPLORER DATABASE (PostgreSQL) =====
+  explorerdb.medchain.com:
+    image: postgres:15-alpine
+    container_name: medchain-explorerdb
+    hostname: explorerdb.medchain.com
+    environment:
+      - DATABASE_DATABASE=fabricexplorer
+      - DATABASE_USERNAME=hppoc
+      - DATABASE_PASSWORD=password
+      - POSTGRES_DB=fabricexplorer
+      - POSTGRES_USER=hppoc
+      - POSTGRES_PASSWORD=password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hppoc -d fabricexplorer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - explorer_pgdata:/var/lib/postgresql/data
+    networks:
+      - medchain-network
+
+  # ===== HYPERLEDGER EXPLORER =====
+  explorer.medchain.com:
+    image: hyperledger/explorer:1.1.8
+    container_name: medchain-explorer
+    hostname: explorer.medchain.com
+    environment:
+      - DATABASE_HOST=explorerdb.medchain.com
+      - DATABASE_DATABASE=fabricexplorer
+      - DATABASE_USERNAME=hppoc
+      - DATABASE_PASSWD=password
+      - LOG_LEVEL_APP=info
+      - LOG_LEVEL_DB=info
+      - LOG_LEVEL_CONSOLE=debug
+      - LOG_CONSOLE_STDOUT=true
+      - DISCOVERY_AS_LOCALHOST=false
+    volumes:
+      - ./explorer-config/config.json:/opt/explorer/app/platform/fabric/config.json
+      - ./explorer-config/connection-profile:/opt/explorer/app/platform/fabric/connection-profile
+      - ./crypto-config:/tmp/crypto
+      - explorer_walletstore:/opt/explorer/wallet
+    ports:
+      - "8080:8080"
+    depends_on:
+      explorerdb.medchain.com:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - medchain-network
+
+volumes:
+  explorer_pgdata:
+  explorer_walletstore:
+
+networks:
+  medchain-network:
+    external: true
+    name: docker_medchain-network

@@ -1,0 +1,10 @@
+{
+    "network-configs": {
+        "medchain-network": {
+            "name": "MedicalChain Network",
+            "profile": "./connection-profile/medchain-network.json",
+            "enableAuthentication": true
+        }
+    },
+    "license": "Apache-2.0"
+}

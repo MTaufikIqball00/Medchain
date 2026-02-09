@@ -43,10 +43,12 @@ if (config.BLOCKCHAIN_MODE === 'REAL') {
 // Import controllers
 const hospitalRoutes = require('./src/controllers/hospitalController');
 const accessRoutes = require('./src/controllers/accessController');
+const dataRequestRoutes = require('./src/controllers/dataRequestController');
 
 // Mount routes
 app.use('/api/hospitals', hospitalRoutes);
 app.use('/api/access', accessRoutes);
+app.use('/api/data-request', dataRequestRoutes);
 
 // Utility function to generate data hash
 function generateDataHash(data) {
