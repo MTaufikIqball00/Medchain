@@ -93,9 +93,10 @@ const App: React.FC = () => {
             isEncrypted: rec.is_encrypted || rec.isEncrypted || false,
             timestamp: rec.timestamp || Date.now()
           },
-          previousHash: "MOCK_HASH",
-          hash: rec.fabricTxId || "MOCK_HASH",
-          nonce: 0
+          previousHash: records[index - 1]?.eth_tx_hash || records[index - 1]?.fabric_tx_id || "GENESIS",
+          hash: rec.eth_tx_hash || rec.fabric_tx_id || rec.fabricTxId || "PENDING",
+          nonce: 0,
+          ethTxHash: rec.eth_tx_hash || null
         }));
 
         // Prepend Genesis Block for UI consistency

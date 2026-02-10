@@ -19,6 +19,7 @@ export interface Block {
   previousHash: string;
   hash: string;
   nonce: number;
+  ethTxHash?: string;
 }
 
 export enum AppView {

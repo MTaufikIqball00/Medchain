@@ -17,7 +17,7 @@ const CONTRACT_ABI = [
 ];
 
 // Contract address - update this after deployment
-const CONTRACT_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+const CONTRACT_ADDRESS = "0x0B306BF915C4d645ff596e518fAf3F9669b97016";
 
 // Ganache network config
 const GANACHE_CHAIN_ID = "0x539"; // 1337 in hex
