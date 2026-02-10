@@ -83,6 +83,7 @@ async function initializeDatabase() {
                 record_id VARCHAR(100) NOT NULL REFERENCES medical_records(record_id),
                 requester_hospital_id VARCHAR(50) NOT NULL REFERENCES hospitals(hospital_id),
                 owner_hospital_id VARCHAR(50) NOT NULL REFERENCES hospitals(hospital_id),
+                request_id VARCHAR(200),
                 eth_request_tx VARCHAR(66),
                 eth_grant_tx VARCHAR(66),
                 status VARCHAR(20) DEFAULT 'PENDING',
@@ -91,6 +92,14 @@ async function initializeDatabase() {
                 responded_at TIMESTAMP,
                 UNIQUE(record_id, requester_hospital_id)
             )
+        `);
+
+        // Add request_id column if it doesn't exist (migration for existing DBs)
+        await client.query(`
+            DO $$ BEGIN
+                ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS request_id VARCHAR(200);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
         `);
 
         // Create access_permissions table
@@ -280,11 +289,11 @@ const recordDB = {
 // Access Request operations
 const accessRequestDB = {
     async create(requestData) {
-        const { record_id, requester_hospital_id, owner_hospital_id, eth_request_tx, reason } = requestData;
+        const { record_id, requester_hospital_id, owner_hospital_id, request_id, eth_request_tx, reason } = requestData;
         const result = await pool.query(
-            `INSERT INTO access_requests (record_id, requester_hospital_id, owner_hospital_id, eth_request_tx, reason)
-             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [record_id, requester_hospital_id, owner_hospital_id, eth_request_tx, reason]
+            `INSERT INTO access_requests (record_id, requester_hospital_id, owner_hospital_id, request_id, eth_request_tx, reason)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [record_id, requester_hospital_id, owner_hospital_id, request_id, eth_request_tx, reason]
         );
         return result.rows[0];
     },

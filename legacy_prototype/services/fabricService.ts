@@ -293,7 +293,7 @@ export const getPendingAccessRequests = async (): Promise<any[]> => {
 /**
  * Grant access to a requester
  */
-export const grantAccess = async (recordId: string, requesterHospitalId: string): Promise<any> => {
+export const grantAccess = async (recordId: string, requesterHospitalId: string, ethTxHash?: string): Promise<any> => {
     const userSession = localStorage.getItem('medchain_user');
     let hospitalId = 'RS-A';
     if (userSession) {
@@ -308,7 +308,11 @@ export const grantAccess = async (recordId: string, requesterHospitalId: string)
             'X-Dev-Token': 'MEDCHAIN_DEV_2026',
             'X-Hospital-Id': hospitalId
         },
-        body: JSON.stringify({ record_id: recordId, requester_hospital_id: requesterHospitalId })
+        body: JSON.stringify({
+            record_id: recordId,
+            requester_hospital_id: requesterHospitalId,
+            eth_tx_hash: ethTxHash
+        })
     });
 
     const result = await response.json();

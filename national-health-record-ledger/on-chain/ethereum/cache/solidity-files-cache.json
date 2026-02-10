@@ -35,6 +35,41 @@
       "artifacts": [
         "MedicalAnchor"
       ]
+    },
+    "/home/iqball/MedicalChain/national-health-record-ledger/on-chain/ethereum/contracts/MedicalDataRequest.sol": {
+      "lastModificationDate": 1770656246194,
+      "contentHash": "9e6a31b6946c5477391d8f43801d0454",
+      "sourceName": "contracts/MedicalDataRequest.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "MedicalDataRequest"
+      ]
     }
   }
 }

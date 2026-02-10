@@ -21,7 +21,9 @@ module.exports = {
       chainId: 31337
     },
     ganache: {
-      url: "http://127.0.0.1:8545",
+      // Use environment variable for flexible WSL/Windows connectivity
+      // Set GANACHE_URL in .env or use default
+      url: process.env.GANACHE_URL || "http://127.0.0.1:8545",
       chainId: 1337
     },
     sepolia: {

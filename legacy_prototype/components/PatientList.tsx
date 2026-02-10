@@ -9,12 +9,26 @@ interface PatientListProps {
   onAddNew: () => void;
 }
 
+// Hospital Address Mapping (from Deployment)
+const HOSPITAL_ADDRESSES: { [key: string]: string } = {
+  'RS-A': '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+  'RS-B': '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+  'RS-HASAN-SADIKIN': '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+  'RS-SILOAM': '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+  'RS-HERMINA': '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc'
+};
+
+import { useMetaMask } from '../services/useMetaMask';
+
 const PatientList: React.FC<PatientListProps> = ({ chain, onSelectPatient, onAddNew }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
   const [globalResult, setGlobalResult] = useState<any>(null);
   const [requestStatus, setRequestStatus] = useState<string>('');
 
+  const { isConnected, connect, requestPatientData } = useMetaMask();
+
+  // ... (useMemo remains same) ...
   const patients = useMemo(() => {
     const patientMap = new Map<string, {
       id: string;
@@ -74,16 +88,67 @@ const PatientList: React.FC<PatientListProps> = ({ chain, onSelectPatient, onAdd
     }
   };
 
-  const handleRequestAccess = async (recordId: string) => {
-    // Direct request for specific record ID
+  const handleRequestAccess = async (recordId: string, hospitalId: string, patientUid: string) => {
     if (!recordId) return;
 
+    if (!isConnected) {
+      const connected = await connect();
+      if (!connected) return alert("Please connect MetaMask first!");
+    }
+
     try {
-      await requestAccess(recordId, "Emergency Access Required");
-      setRequestStatus(`Request for sent! Check Inbox.`);
-      // alert("Request Sent!"); // Optional, status text is cleaner
-    } catch (err) {
-      alert("Failed: " + err);
+      setRequestStatus("Initiating transaction with MetaMask...");
+
+      const targetAddress = HOSPITAL_ADDRESSES[hospitalId];
+      if (!targetAddress) {
+        throw new Error(`Address for hospital ${hospitalId} not found`);
+      }
+
+      // Generate Request ID
+      const requestId = `REQ-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const purpose = "Emergency Access - Prototype";
+
+      // 1. Call Smart Contract via MetaMask
+      const txResult = await requestPatientData(requestId, targetAddress, patientUid, purpose);
+
+      if (!txResult.success) {
+        throw new Error(txResult.error);
+      }
+
+      setRequestStatus("Transaction confirmed! Syncing with backend...");
+
+      // 2. Sync with Backend
+      // We use a custom fetch here to pass eth_tx_hash to the existing endpoint
+      const API_BASE_URL = (import.meta.env.VITE_API_URL as string) || 'http://localhost:4000/api';
+      const userSession = localStorage.getItem('medchain_user');
+      let myHospitalId = 'RS-A';
+      if (userSession) {
+        const user = JSON.parse(userSession);
+        myHospitalId = user.hospitalId || 'RS-A';
+      }
+
+      const response = await fetch(`${API_BASE_URL}/access/request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Dev-Token': 'MEDCHAIN_DEV_2026',
+          'X-Hospital-Id': myHospitalId
+        },
+        body: JSON.stringify({
+          record_id: recordId,
+          reason: purpose,
+          request_id: requestId, // Blockchain request ID - needed for approve flow
+          eth_tx_hash: txResult.txHash // Pass hash to skip backend blockchain call
+        })
+      });
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+
+      setRequestStatus(`Request sent successfully! TX: ${txResult.txHash?.slice(0, 10)}...`);
+    } catch (err: any) {
+      alert("Failed: " + err.message);
+      setRequestStatus("Request failed.");
     }
   };
 
@@ -176,7 +241,7 @@ const PatientList: React.FC<PatientListProps> = ({ chain, onSelectPatient, onAdd
                     </div>
 
                     <button
-                      onClick={() => handleRequestAccess(rec.record_id)}
+                      onClick={() => handleRequestAccess(rec.record_id, rec.hospital_id, globalResult.patient_uid)}
                       className="bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium shadow-sm"
                     >
                       <ShieldQuestion className="w-4 h-4" />

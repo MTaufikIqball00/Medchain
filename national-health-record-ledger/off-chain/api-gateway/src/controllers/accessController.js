@@ -56,12 +56,14 @@ router.post('/request', authenticateHospital, async (req, res) => {
             });
         }
 
-        // Submit to Ethereum if in REAL mode
-        let ethTxHash = null;
-        if (config.BLOCKCHAIN_MODE === 'REAL' && requester.eth_address) {
+        // Submit to Ethereum if in REAL mode query
+        let ethTxHash = req.body.eth_tx_hash || null; // Accept existing hash from frontend
+
+        if (!ethTxHash && config.BLOCKCHAIN_MODE === 'REAL' && requester.eth_address) {
             try {
                 const ownerHospital = await hospitalDB.findById(record.hospital_id);
                 if (ownerHospital && ownerHospital.eth_address) {
+                    // Use legacy requestAccess if no hash provided (fallback)
                     ethTxHash = await ethService.requestAccess(record_id, ownerHospital.eth_address, requester.eth_address);
                 }
             } catch (ethError) {
@@ -74,6 +76,7 @@ router.post('/request', authenticateHospital, async (req, res) => {
             record_id,
             requester_hospital_id: requester.hospital_id,
             owner_hospital_id: record.hospital_id,
+            request_id: req.body.request_id || null, // Blockchain request ID from frontend
             eth_request_tx: ethTxHash,
             reason: reason || null
         });
@@ -167,8 +170,9 @@ router.post('/grant', authenticateHospital, async (req, res) => {
         }
 
         // Submit to Ethereum if in REAL mode
-        let ethTxHash = null;
-        if (config.BLOCKCHAIN_MODE === 'REAL' && owner.eth_address) {
+        let ethTxHash = req.body.eth_tx_hash || null; // Accept existing hash from frontend
+
+        if (!ethTxHash && config.BLOCKCHAIN_MODE === 'REAL' && owner.eth_address) {
             try {
                 const requesterHospital = await hospitalDB.findById(requester_hospital_id);
                 if (requesterHospital && requesterHospital.eth_address) {

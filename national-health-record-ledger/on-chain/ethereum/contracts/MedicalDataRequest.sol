@@ -17,10 +17,11 @@ contract MedicalDataRequest {
     // ===== ENUMS =====
     
     enum RequestStatus { 
-        PENDING,    // Request created, awaiting response
-        APPROVED,   // Request approved, access granted
-        REJECTED,   // Request rejected by target hospital
-        EXPIRED     // Access period has expired (24 hours after approval)
+        PENDING,            // Request created, awaiting response from target hospital
+        APPROVED_PENDING,   // Approved by target hospital, awaiting requester confirmation
+        APPROVED,           // Confirmed by requester, access granted
+        REJECTED,           // Request rejected by target hospital
+        EXPIRED             // Access period has expired (24 hours after confirmation)
     }
 
     // ===== STRUCTS =====
@@ -113,6 +114,14 @@ contract MedicalDataRequest {
         string indexed requestId,
         uint256 timestamp
     );
+    
+    event ApprovalConfirmed(
+        string indexed requestId,
+        address indexed requestingHospital,
+        address indexed targetHospital,
+        uint256 confirmedAt,
+        uint256 expiresAt
+    );
 
     // ===== MODIFIERS =====
     
@@ -129,6 +138,12 @@ contract MedicalDataRequest {
     modifier onlyTargetHospital(string memory _requestId) {
         require(requests[_requestId].exists, "Request does not exist");
         require(requests[_requestId].targetHospital == msg.sender, "Only target hospital can perform this action");
+        _;
+    }
+    
+    modifier onlyRequestingHospital(string memory _requestId) {
+        require(requests[_requestId].exists, "Request does not exist");
+        require(requests[_requestId].requestingHospital == msg.sender, "Only requesting hospital can perform this action");
         _;
     }
 
@@ -256,8 +271,9 @@ contract MedicalDataRequest {
     }
 
     /**
-     * @dev Approve a pending data request (grants 24-hour access)
+     * @dev Approve a pending data request (Two-Step: sets APPROVED_PENDING, requester must confirm)
      * @param _requestId Request ID to approve
+     * @notice This marks the request as approved, but requester must call confirmApproval() to finalize
      */
     function approveRequest(string memory _requestId) 
         public 
@@ -267,17 +283,43 @@ contract MedicalDataRequest {
         DataRequest storage request = requests[_requestId];
         require(request.status == RequestStatus.PENDING, "Request is not pending");
         
-        request.status = RequestStatus.APPROVED;
-        request.approvedAt = block.timestamp;
-        request.expiresAt = block.timestamp + ACCESS_DURATION;
+        // Set to APPROVED_PENDING - requester must confirm to finalize
+        request.status = RequestStatus.APPROVED_PENDING;
         
-        // Remove from pending list
+        // Remove from pending list (approval given, waiting for confirmation)
         _removeFromPendingList(msg.sender, _requestId);
         
         emit RequestApproved(
             _requestId,
             msg.sender,
             request.requestingHospital,
+            block.timestamp, // approvedAt set when confirmed
+            0 // expiresAt set when confirmed
+        );
+    }
+    
+    /**
+     * @dev Confirm approval and finalize access (called by REQUESTING hospital - pays gas)
+     * @param _requestId Request ID to confirm
+     * @notice This is the second step of Two-Step Approval. Requester pays gas for this transaction.
+     */
+    function confirmApproval(string memory _requestId) 
+        public 
+        onlyRegisteredHospital 
+        onlyRequestingHospital(_requestId) 
+    {
+        DataRequest storage request = requests[_requestId];
+        require(request.status == RequestStatus.APPROVED_PENDING, "Request is not pending confirmation");
+        
+        // Finalize approval - set timestamps and grant access
+        request.status = RequestStatus.APPROVED;
+        request.approvedAt = block.timestamp;
+        request.expiresAt = block.timestamp + ACCESS_DURATION;
+        
+        emit ApprovalConfirmed(
+            _requestId,
+            msg.sender,
+            request.targetHospital,
             request.approvedAt,
             request.expiresAt
         );
