@@ -206,9 +206,11 @@ app.post('/api/fabric/records', authenticateHospital, async (req, res) => {
         const recordData = { patient_uid, diagnosis, treatment, symptoms, department, doctor_name, timestamp: Date.now() };
         const data_hash = generateDataHash(recordData);
 
-        // Submit to Fabric
+        // Submit to Fabric (CreateMetadata: recordId, patientUid, hospitalId, location, dataHash, description)
+        const offChainLoc = `postgres://medchain/records/${record_id}`;
+        const description = department || diagnosis || 'Medical Record';
         console.log(`[FABRIC] Submitting record: ${record_id}`);
-        const fabricTxId = await fabricService.submitTransaction('CreateRecord', record_id, patient_uid, hospital.hospital_id, data_hash);
+        const fabricTxId = await fabricService.submitTransaction('CreateMetadata', record_id, patient_uid, hospital.hospital_id, offChainLoc, data_hash, description);
 
         // Anchor hash to Ethereum
         let ethTxHash = null;
@@ -543,8 +545,16 @@ app.put('/api/fabric/records/:recordId', authenticateHospital, async (req, res) 
         };
         const new_data_hash = generateDataHash(newData);
 
-        // Submit to Fabric
-        const fabricTxId = await fabricService.submitTransaction('UpdateRecord', recordId, record.patient_uid, hospital.hospital_id, new_data_hash);
+        // Submit to Fabric (chaincode doesn't have UpdateMetadata, so we log the update)
+        // The data hash change is tracked in PostgreSQL; Fabric keeps the original metadata
+        let fabricTxId = record.fabric_tx_id;
+        try {
+            // Try to read and verify the record still exists on chain
+            const onChainData = await fabricService.evaluateTransaction('ReadMetadata', recordId);
+            console.log(`[FABRIC] Record ${recordId} verified on chain, updating off-chain only`);
+        } catch (e) {
+            console.log(`[FABRIC] Record ${recordId} not found on chain, skipping chain update`);
+        }
 
         // Update in database
         const updated = await recordDB.update(recordId, {
@@ -602,8 +612,8 @@ app.delete('/api/fabric/records/:recordId', authenticateHospital, async (req, re
             });
         }
 
-        // Submit to Fabric
-        const fabricTxId = await fabricService.submitTransaction('DeleteRecord', recordId);
+        // Submit to Fabric (SoftDelete on chain)
+        const fabricTxId = await fabricService.submitTransaction('SoftDelete', recordId);
 
         // Soft delete in database
         await recordDB.softDelete(recordId);

@@ -22,3 +22,25 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Fabric Binaries
+national-health-record-ledger/bin/
+
+# Fabric Crypto Material & Config
+national-health-record-ledger/crypto-config/
+national-health-record-ledger/scripts/crypto-config/
+national-health-record-ledger/config/
+!national-health-record-ledger/config/core.yaml
+!national-health-record-ledger/config/orderer.yaml
+!national-health-record-ledger/config/configtx.yaml
+
+# Wallet & Identity
+national-health-record-ledger/off-chain/api-gateway/wallet/
+*.id
+*.pem
+*.key
+
+# Environment Variables
+.env
+.env.*
+!.env.example
