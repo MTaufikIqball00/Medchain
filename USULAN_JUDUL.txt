@@ -1,0 +1,18 @@
+Berikut adalah beberapa opsi perbaikan judul yang lebih sesuai dengan format yang diminta, dengan mempertimbangkan arsitektur utama sistem (Hyperledger Fabric = Konsorsium) dan fitur tambahan (AI):
+
+**Opsi 1 (Fokus Implementasi - Paling Aman Sesuai Template):**
+"Implementasi Teknologi Blockchain Konsorsium Pada Aplikasi Rekam Medis Elektronik Terintegrasi"
+
+**Opsi 2 (Fokus Pembangunan - Lebih Deskriptif):**
+"Pembangunan Aplikasi Rekam Medis Elektronik Nasional Berbasis Teknologi Blockchain Konsorsium"
+
+**Opsi 3 (Jika Hybrid Diperbolehkan - Paling Akurat Secara Teknis):**
+"Implementasi Teknologi Blockchain Hybrid Pada Aplikasi Rekam Medis Elektronik (National Health Record Ledger)"
+
+**Opsi 4 (Menonjolkan Fitur AI):**
+"Pembangunan Aplikasi Rekam Medis Elektronik Berbasis Teknologi Blockchain Konsorsium dan Kecerdasan Buatan"
+
+**Analisis:**
+- **Konsorsium:** Karena arsitektur utama menggunakan Hyperledger Fabric (Private/Permissioned), istilah "Konsorsium" lebih tepat daripada "Publik".
+- **Hybrid:** Jika dosen pembimbing mengizinkan istilah "Hybrid" (karena ada komponen Ethereum), opsi 3 sangat direkomendasikan karena paling menggambarkan sistem secara utuh.
+- **Aplikasi:** Istilah "Sistem Rekam Medis Elektronik" diganti menjadi "Aplikasi Rekam Medis Elektronik" agar sesuai template.
