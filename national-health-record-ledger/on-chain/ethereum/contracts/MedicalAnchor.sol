@@ -60,6 +60,7 @@ contract MedicalAnchor {
     event AccessRequested(string indexed recordId, address indexed requester, address indexed owner, uint256 timestamp);
     event AccessGranted(string indexed recordId, address indexed owner, address indexed grantedTo, uint256 timestamp);
     event AccessRevoked(string indexed recordId, address indexed owner, address indexed revokedFrom, uint256 timestamp);
+    event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
 
     // ===== MODIFIERS =====
     
@@ -85,6 +86,17 @@ contract MedicalAnchor {
         admin = msg.sender;
     }
 
+    // ===== ADMIN MANAGEMENT =====
+
+    /**
+     * @dev Transfer admin rights to a new address
+     */
+    function transferAdmin(address _newAdmin) public onlyAdmin {
+        require(_newAdmin != address(0), "New admin cannot be zero address");
+        emit AdminTransferred(admin, _newAdmin);
+        admin = _newAdmin;
+    }
+
     // ===== HOSPITAL REGISTRATION =====
     
     /**
@@ -95,6 +107,8 @@ contract MedicalAnchor {
         string memory _hospitalId, 
         string memory _name
     ) public onlyAdmin {
+        require(_hospitalAddress != address(0), "Hospital address cannot be zero");
+        require(bytes(_hospitalId).length > 0, "Hospital ID cannot be empty");
         require(!hospitals[_hospitalAddress].isRegistered, "Hospital already registered");
         
         hospitals[_hospitalAddress] = Hospital({

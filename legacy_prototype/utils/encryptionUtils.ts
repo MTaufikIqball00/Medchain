@@ -1,12 +1,24 @@
-// Simulation of a Symmetric Key for the Medical Consortium
-// In a real production app, this would be derived from the user's wallet private key or session
-const SECRET_PASSPHRASE = "MEDCHAIN_CONSORTIUM_SECURE_KEY_2024";
+// Encryption Key for the Medical Consortium
+// In production, this can be derived from the user's wallet signature (EIP-712/MetaMask) or session key
+const getSecretPassphrase = (): string => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_ENCRYPTION_PASSPHRASE) {
+    return import.meta.env.VITE_ENCRYPTION_PASSPHRASE;
+  }
+  return "MEDCHAIN_CONSORTIUM_SECURE_KEY_2026";
+};
+
+const getSecretSalt = (): string => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_ENCRYPTION_SALT) {
+    return import.meta.env.VITE_ENCRYPTION_SALT;
+  }
+  return "MEDCHAIN_CONSORTIUM_SALT_2026";
+};
 
 const getCryptoKey = async (): Promise<CryptoKey> => {
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
     "raw",
-    enc.encode(SECRET_PASSPHRASE),
+    enc.encode(getSecretPassphrase()),
     { name: "PBKDF2" },
     false,
     ["deriveKey"]
@@ -15,7 +27,7 @@ const getCryptoKey = async (): Promise<CryptoKey> => {
   return window.crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: enc.encode("MEDCHAIN_SALT"),
+      salt: enc.encode(getSecretSalt()),
       iterations: 100000,
       hash: "SHA-256",
     },

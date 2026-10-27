@@ -2,9 +2,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiAnalysisResult } from "../types";
 
 const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = 
+    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) ||
+    (typeof process !== 'undefined' && process.env ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : undefined);
+
   if (!apiKey) {
-    throw new Error("API Key not found");
+    throw new Error("Gemini API Key not found. Please set VITE_GEMINI_API_KEY in your environment.");
   }
   return new GoogleGenAI({ apiKey });
 };

@@ -123,6 +123,12 @@ contract MedicalDataRequest {
         uint256 expiresAt
     );
 
+    event AdminTransferred(
+        address indexed oldAdmin,
+        address indexed newAdmin,
+        uint256 timestamp
+    );
+
     // ===== MODIFIERS =====
     
     modifier onlyAdmin() {
@@ -528,6 +534,7 @@ contract MedicalDataRequest {
      */
     function transferAdmin(address _newAdmin) public onlyAdmin {
         require(_newAdmin != address(0), "New admin cannot be zero address");
+        emit AdminTransferred(admin, _newAdmin, block.timestamp);
         admin = _newAdmin;
     }
 

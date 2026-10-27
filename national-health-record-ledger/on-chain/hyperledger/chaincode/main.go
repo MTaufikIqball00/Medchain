@@ -15,15 +15,23 @@ type MedicalContract struct {
 
 // MedicalMetadata represents the data stored on Fabric (NO PII)
 type MedicalMetadata struct {
-	RecordID      string `json:"recordId"`      // Unique UUID
-	PatientUID    string `json:"patientUid"`    // Pseudonymized ID
-	HospitalID    string `json:"hospitalId"`    // Origin Hospital
-	OffChainLoc   string `json:"offChainLoc"`   // URL/Pointer to off-chain DB
-	DataHash      string `json:"dataHash"`      // SHA-256 for integrity check
-	Description   string `json:"description"`   // e.g. "General Checkup"
-	Timestamp     int64  `json:"timestamp"`
-	IsDeleted     bool   `json:"isDeleted"`     // Soft Delete Flag
-	AccessList    []string `json:"accessList"`  // List of HospitalIDs with access
+	RecordID    string   `json:"recordId"`    // Unique UUID
+	PatientUID  string   `json:"patientUid"`  // Pseudonymized ID
+	HospitalID  string   `json:"hospitalId"`  // Origin Hospital
+	OffChainLoc string   `json:"offChainLoc"` // URL/Pointer to off-chain DB
+	DataHash    string   `json:"dataHash"`    // SHA-256 for integrity check
+	Description string   `json:"description"` // e.g. "General Checkup"
+	Timestamp   int64    `json:"timestamp"`   // Deterministic Unix timestamp from transaction
+	IsDeleted   bool     `json:"isDeleted"`   // Soft Delete Flag
+	AccessList  []string `json:"accessList"`  // List of HospitalIDs with access
+}
+
+// HistoryRecord represents a historical state modification
+type HistoryRecord struct {
+	TxId      string           `json:"txId"`
+	Timestamp int64            `json:"timestamp"`
+	IsDelete  bool             `json:"isDelete"`
+	Record    *MedicalMetadata `json:"record"`
 }
 
 // InitLedger adds a base set of data to the ledger
@@ -32,8 +40,21 @@ func (c *MedicalContract) InitLedger(ctx contractapi.TransactionContextInterface
 	return nil
 }
 
-// CreateMetadata adds a new record metadata
+// getTxTimestampSec gets deterministic Unix timestamp from transaction header
+func getTxTimestampSec(ctx contractapi.TransactionContextInterface) int64 {
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil || txTimestamp == nil {
+		return time.Now().Unix() // fallback
+	}
+	return txTimestamp.GetSeconds()
+}
+
+// CreateMetadata adds a new record metadata (full parameter version)
 func (c *MedicalContract) CreateMetadata(ctx contractapi.TransactionContextInterface, recordId string, patientUid string, hospitalId string, location string, dataHash string, desc string) error {
+	if recordId == "" || patientUid == "" || hospitalId == "" || dataHash == "" {
+		return fmt.Errorf("recordId, patientUid, hospitalId, and dataHash are required")
+	}
+
 	exists, err := c.MetadataExists(ctx, recordId)
 	if err != nil {
 		return err
@@ -49,7 +70,7 @@ func (c *MedicalContract) CreateMetadata(ctx contractapi.TransactionContextInter
 		OffChainLoc: location,
 		DataHash:    dataHash,
 		Description: desc,
-		Timestamp:   time.Now().Unix(),
+		Timestamp:   getTxTimestampSec(ctx),
 		IsDeleted:   false,
 		AccessList:  []string{hospitalId},
 	}
@@ -60,6 +81,11 @@ func (c *MedicalContract) CreateMetadata(ctx contractapi.TransactionContextInter
 	}
 
 	return ctx.GetStub().PutState(recordId, metadataJSON)
+}
+
+// CreateRecord adds a new record metadata (simplified parameter version matching gateway)
+func (c *MedicalContract) CreateRecord(ctx contractapi.TransactionContextInterface, recordId string, patientUid string, hospitalId string, dataHash string) error {
+	return c.CreateMetadata(ctx, recordId, patientUid, hospitalId, "POSTGRESQL_OFFCHAIN", dataHash, "Medical Record")
 }
 
 // ReadMetadata returns the metadata stored in the world state with id
@@ -78,24 +104,24 @@ func (c *MedicalContract) ReadMetadata(ctx contractapi.TransactionContextInterfa
 		return nil, err
 	}
 
-	if metadata.IsDeleted {
-		return nil, fmt.Errorf("record %s has been deleted", recordId)
-	}
-
 	return &metadata, nil
 }
 
 // SoftDelete marks a record as deleted (Right to Erasure compliance support)
-func (c *MedicalContract) SoftDelete(ctx contractapi.TransactionContextInterface, recordId string) error {
+func (c *MedicalContract) SoftDelete(ctx contractapi.TransactionContextInterface, recordId string, requestingHospitalId string) error {
 	metadata, err := c.ReadMetadata(ctx, recordId)
 	if err != nil {
 		return err
 	}
 
+	// Access control check: Only origin hospital can soft delete
+	if metadata.HospitalID != requestingHospitalId {
+		return fmt.Errorf("unauthorized: only owner hospital %s can soft delete record %s", metadata.HospitalID, recordId)
+	}
+
 	metadata.IsDeleted = true
 
-	// We overwrite the state with IsDeleted=true.
-	// We DO NOT delete the state key entirely to maintain Audit Trail of the deletion.
+	// Overwrite state with IsDeleted=true to maintain Audit Trail
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err
@@ -114,10 +140,15 @@ func (c *MedicalContract) MetadataExists(ctx contractapi.TransactionContextInter
 }
 
 // GrantAccess adds a hospital ID to the access list
-func (c *MedicalContract) GrantAccess(ctx contractapi.TransactionContextInterface, recordId string, targetHospitalId string) error {
+func (c *MedicalContract) GrantAccess(ctx contractapi.TransactionContextInterface, recordId string, granterHospitalId string, targetHospitalId string) error {
 	metadata, err := c.ReadMetadata(ctx, recordId)
 	if err != nil {
 		return err
+	}
+
+	// Access control check: Only owner hospital can grant access
+	if metadata.HospitalID != granterHospitalId {
+		return fmt.Errorf("unauthorized: only owner hospital %s can grant access to record %s", metadata.HospitalID, recordId)
 	}
 
 	// Check if already has access
@@ -136,14 +167,47 @@ func (c *MedicalContract) GrantAccess(ctx contractapi.TransactionContextInterfac
 	return ctx.GetStub().PutState(recordId, metadataJSON)
 }
 
+// GetTransactionHistory retrieves history for a specific record
+func (c *MedicalContract) GetTransactionHistory(ctx contractapi.TransactionContextInterface, recordId string) ([]HistoryRecord, error) {
+	resultsIterator, err := ctx.GetStub().GetHistoryForKey(recordId)
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	var history []HistoryRecord
+	for resultsIterator.HasNext() {
+		response, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		var record MedicalMetadata
+		if len(response.Value) > 0 {
+			if err := json.Unmarshal(response.Value, &record); err != nil {
+				return nil, err
+			}
+		}
+
+		history = append(history, HistoryRecord{
+			TxId:      response.TxId,
+			Timestamp: response.Timestamp.GetSeconds(),
+			IsDelete:  response.IsDelete,
+			Record:    &record,
+		})
+	}
+
+	return history, nil
+}
+
 func main() {
 	chaincode, err := contractapi.NewChaincode(&MedicalContract{})
 	if err != nil {
-		fmt.Printf("Error creating medical chaincode: %s", err.Error())
+		fmt.Printf("Error creating medical chaincode: %s\n", err.Error())
 		return
 	}
 
 	if err := chaincode.Start(); err != nil {
-		fmt.Printf("Error starting medical chaincode: %s", err.Error())
+		fmt.Printf("Error starting medical chaincode: %s\n", err.Error())
 	}
 }

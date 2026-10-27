@@ -1,0 +1,11 @@
+{
+  "name": "medchain-national-health-record-ledger",
+  "version": "2.0.0",
+  "description": "National Health Record Ledger with Hyperledger Fabric, Ethereum Trust Anchor, and AI",
+  "scripts": {
+    "start": "start.bat",
+    "launch": "start.bat"
+  },
+  "author": "MedicalChain Team",
+  "license": "MIT"
+}

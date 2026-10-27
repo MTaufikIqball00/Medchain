@@ -85,8 +85,7 @@ async function submitTransaction(funcName, ...args) {
         return txId;
     } catch (error) {
         console.error(`[FABRIC] ❌ submitTransaction error: ${error.message}`);
-        // Return mock TX ID on error to allow API to continue
-        return `FABRIC_TX_${Date.now()}_ERROR`;
+        throw new Error(`Fabric transaction failed [${funcName}]: ${error.message}`);
     }
 }
 

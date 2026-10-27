@@ -12,6 +12,22 @@ dist
 dist-ssr
 *.local
 
+# Environment variables & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+wallet/
+crypto-config/
+
+# Blockchain & Hardhat artifacts
+artifacts/
+cache/
+typechain/
+typechain-types/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +38,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
